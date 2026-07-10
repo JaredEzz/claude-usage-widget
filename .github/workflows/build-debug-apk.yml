@@ -30,30 +30,6 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-gradle-
 
-      - name: Cache debug signing key
-        uses: actions/cache@v4
-        with:
-          path: ~/.android/debug.keystore
-          # Fixed key (not content-hashed) -- created once, reused by every run after, so debug
-          # builds keep a stable signature and `adb install -r` can update in place instead of
-          # requiring an uninstall (which would wipe the app's WebView cookies / accounts).
-          key: debug-keystore-v1
-
-      - name: Ensure debug signing key exists
-        # AGP auto-generates ~/.android/debug.keystore on first use, but only mid-build -- by then
-        # it's too late for the cache step above (which snapshots its path at end-of-job) to have
-        # ever seen it get created on a cache-miss run, so it silently never saved. Generate it
-        # ourselves up front (matching AGP's own default debug key spec) so the path is always
-        # populated before the cache-save phase runs, on both cache-hit and cache-miss runs.
-        run: |
-          mkdir -p ~/.android
-          if [ ! -f ~/.android/debug.keystore ]; then
-            keytool -genkeypair -v -keystore ~/.android/debug.keystore \
-              -storepass android -keypass android -alias androiddebugkey \
-              -keyalg RSA -keysize 2048 -validity 10000 \
-              -dname "CN=Android Debug,O=Android,C=US"
-          fi
-
       - name: Make gradlew executable
         run: chmod +x gradlew
 

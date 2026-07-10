@@ -38,6 +38,17 @@ android {
                 keyPassword = keystoreProps.getProperty("keyPassword")
             }
         }
+        // A checked-in, non-secret debug key (see debug-keystore/) instead of AGP's implicit
+        // per-machine ~/.android/debug.keystore. Every build -- local or CI -- shares this exact
+        // signature, so `adb install -r` always updates in place instead of requiring an uninstall
+        // (which wipes the app's accounts/WebView state) whenever the build happens to run on a
+        // fresh machine.
+        getByName("debug") {
+            storeFile = rootProject.file("debug-keystore/debug.keystore")
+            storePassword = "android"
+            keyAlias = "androiddebugkey"
+            keyPassword = "android"
+        }
     }
 
     buildTypes {

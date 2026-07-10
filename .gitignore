@@ -13,3 +13,8 @@ app/build/
 /.signing/
 *.keystore
 *.jks
+
+# Exception: a non-secret debug-only keystore (password "android", matches the Android default
+# debug key spec), checked in so every CI build shares the same signature and `adb install -r`
+# can update in place instead of requiring an uninstall each time.
+!/debug-keystore/debug.keystore
