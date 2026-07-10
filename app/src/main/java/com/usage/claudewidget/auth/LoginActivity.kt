@@ -142,6 +142,20 @@ class LoginActivity : Activity() {
         }
     }
 
+    override fun onResume() {
+        super.onResume()
+        // WebView requires an explicit onResume() call to resume its renderer/JS timers -- Android
+        // does not do this automatically. Without it, backgrounding this activity (e.g. switching
+        // to another app to read a verification email) and returning can leave the WebView's
+        // rendering surface permanently blank even though the underlying page is still loaded.
+        if (::webView.isInitialized) webView.onResume()
+    }
+
+    override fun onPause() {
+        super.onPause()
+        if (::webView.isInitialized) webView.onPause()
+    }
+
     override fun onDestroy() {
         // If login was abandoned before capture, unblock the lock-holding coroutine so the shared
         // jar lock is released; then cancel the scope.

@@ -26,10 +26,14 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import com.usage.claudewidget.auth.LoginActivity
 import com.usage.claudewidget.data.Account
 import com.usage.claudewidget.data.AccountStorage
@@ -74,6 +78,21 @@ private fun SetupScreen(reAuthAccountId: String?) {
     // If we were opened to re-auth a specific account, kick that off once.
     androidx.compose.runtime.LaunchedEffect(reAuthAccountId) {
         if (reAuthAccountId != null) signIn(reAuthAccountId)
+    }
+
+    // `accounts` (and each row's sign-in status, read from `storage` at composition time) only
+    // reflects the current disk/in-memory state as of the last recomposition -- Compose has no
+    // reason to recompose this screen just because credentials changed via a route it doesn't
+    // observe (e.g. a login driven from outside this Activity's own ActivityResultLauncher, such
+    // as `adb shell am start`). Re-read on every resume so returning to this screen never shows
+    // stale "signed out" state for an account that's actually signed in.
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) accounts = storage.listAccounts()
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
     Column(
