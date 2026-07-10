@@ -72,10 +72,17 @@ class LoginActivity : Activity() {
     private fun startLogin() {
         val cm = CookieManager.getInstance()
         cm.setAcceptCookie(true)
+        val startUrl = intent.getStringExtra(EXTRA_START_URL)
         // Wipe any prior account's session before logging in so the WebView can't silently reuse
-        // it and harvest the wrong account's cookies.
-        cm.removeAllCookies(null)
-        cm.flush()
+        // it and harvest the wrong account's cookies. Skip when continuing an in-flight attempt via
+        // an explicit startUrl (e.g. a magic-link click) -- clearing here would drop the pending
+        // session/anti-CSRF cookie the original /login page + email submission just set, which is
+        // exactly what makes claude.ai treat the magic-link visit as a same-browser continuation
+        // instead of a cross-device verification challenge.
+        if (startUrl == null) {
+            cm.removeAllCookies(null)
+            cm.flush()
+        }
 
         webView = WebView(this).apply {
             cm.setAcceptThirdPartyCookies(this, true)
@@ -89,7 +96,7 @@ class LoginActivity : Activity() {
                     tryCapture()
                 }
             }
-            loadUrl(intent.getStringExtra(EXTRA_START_URL) ?: Const.LOGIN_URL)
+            loadUrl(startUrl ?: Const.LOGIN_URL)
         }
         setContentView(webView)
     }
