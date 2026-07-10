@@ -1,8 +1,11 @@
 package com.usage.claudewidget.ui
 
+import android.Manifest
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.os.PowerManager
 import android.provider.Settings
@@ -19,6 +22,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.getValue
@@ -32,12 +36,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import com.usage.claudewidget.auth.LoginActivity
 import com.usage.claudewidget.data.Account
 import com.usage.claudewidget.data.AccountStorage
 import com.usage.claudewidget.widget.UsageWidget
+import com.usage.claudewidget.work.ResetNotificationWorker
 import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
@@ -75,6 +81,32 @@ private fun SetupScreen(reAuthAccountId: String?) {
         loginLauncher.launch(intent)
     }
 
+    // Android 13+ requires this permission before any notification can be posted; only relevant
+    // once the user actually turns a "notify at reset" switch on.
+    val notifyPermissionLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { /* if denied, the toggle stays on but the notification silently won't post */ }
+
+    fun setNotifyOnReset(accountId: String, enabled: Boolean) {
+        storage.setNotifyOnReset(accountId, enabled)
+        if (enabled) {
+            if (Build.VERSION.SDK_INT >= 33 &&
+                ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS)
+                    != PackageManager.PERMISSION_GRANTED
+            ) {
+                notifyPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+            }
+            val resetAt = storage.fiveHourReset(accountId)
+            if (resetAt > 0L) {
+                val label = accounts.find { it.id == accountId }?.label ?: "Claude"
+                ResetNotificationWorker.schedule(context, accountId, label, resetAt)
+            }
+        } else {
+            ResetNotificationWorker.cancel(context, accountId)
+        }
+        accounts = storage.listAccounts()
+    }
+
     // If we were opened to re-auth a specific account, kick that off once.
     androidx.compose.runtime.LaunchedEffect(reAuthAccountId) {
         if (reAuthAccountId != null) signIn(reAuthAccountId)
@@ -109,12 +141,15 @@ private fun SetupScreen(reAuthAccountId: String?) {
             AccountRow(
                 account = account,
                 needsLogin = !storage.isLoggedIn(account.id),
+                notifyEnabled = storage.notifyOnReset(account.id),
                 onSignIn = { signIn(account.id) },
                 onSignOut = {
+                    ResetNotificationWorker.cancel(context, account.id)
                     storage.removeAccount(account.id)
                     accounts = storage.listAccounts()
                     scope.launch { UsageWidget.updateAll(context) }
                 },
+                onToggleNotify = { setNotifyOnReset(account.id, it) },
             )
         }
 
@@ -132,23 +167,35 @@ private fun SetupScreen(reAuthAccountId: String?) {
 private fun AccountRow(
     account: Account,
     needsLogin: Boolean,
+    notifyEnabled: Boolean,
     onSignIn: () -> Unit,
     onSignOut: () -> Unit,
+    onToggleNotify: (Boolean) -> Unit,
 ) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.SpaceBetween,
-    ) {
-        Text(
-            account.label + if (needsLogin) " (signed out)" else "",
-            style = MaterialTheme.typography.titleMedium,
-        )
-        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-            TextButton(onClick = onSignIn) {
-                Text(if (needsLogin) "Sign in" else "Re-sign in")
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+            Text(
+                account.label + if (needsLogin) " (signed out)" else "",
+                style = MaterialTheme.typography.titleMedium,
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                TextButton(onClick = onSignIn) {
+                    Text(if (needsLogin) "Sign in" else "Re-sign in")
+                }
+                TextButton(onClick = onSignOut) { Text("Sign out") }
             }
-            TextButton(onClick = onSignOut) { Text("Sign out") }
+        }
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+            Text("Notify at 5H reset", style = MaterialTheme.typography.bodyMedium)
+            Switch(checked = notifyEnabled, onCheckedChange = onToggleNotify)
         }
     }
 }

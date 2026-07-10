@@ -49,6 +49,14 @@ class AccountStorage private constructor(
         accounts.edit().putString("$LABEL_PREFIX$accountId", label).apply()
     }
 
+    /** Whether to post a notification when this account's 5-hour usage window resets. */
+    fun notifyOnReset(accountId: String): Boolean =
+        accounts.getBoolean("$NOTIFY_PREFIX$accountId", false)
+
+    fun setNotifyOnReset(accountId: String, enabled: Boolean) {
+        accounts.edit().putBoolean("$NOTIFY_PREFIX$accountId", enabled).apply()
+    }
+
     /** True while [accountId] is still in the registry (i.e. not signed out / removed). */
     fun accountExists(accountId: String): Boolean =
         accounts.getStringSet(KEY_ACCOUNT_IDS, emptySet()).orEmpty().contains(accountId)
@@ -78,6 +86,7 @@ class AccountStorage private constructor(
         accounts.edit()
             .putStringSet(KEY_ACCOUNT_IDS, ids)
             .remove("$LABEL_PREFIX$accountId")
+            .remove("$NOTIFY_PREFIX$accountId")
             .apply()
     }
 
@@ -143,6 +152,7 @@ class AccountStorage private constructor(
     companion object {
         private const val KEY_ACCOUNT_IDS = "account_ids"
         private const val LABEL_PREFIX = "label:"
+        private const val NOTIFY_PREFIX = "notify:"
 
         @Volatile private var instance: AccountStorage? = null
 

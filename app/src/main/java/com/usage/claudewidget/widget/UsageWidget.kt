@@ -59,9 +59,9 @@ class UsageWidget : GlanceAppWidget() {
                 storage.authState(accountId) == AuthState.NEEDS_LOGIN,
             hasData = storage.hasSnapshot(accountId),
             fiveHourPct = storage.fiveHourUtil(accountId).coerceAtLeast(0f).roundToInt(),
-            fiveHourResets = TimeFmt.resetsIn(storage.fiveHourReset(accountId), now),
+            fiveHourResets = TimeFmt.resetsSummary(storage.fiveHourReset(accountId), now),
             sevenDayPct = storage.sevenDayUtil(accountId).coerceAtLeast(0f).roundToInt(),
-            sevenDayResets = TimeFmt.resetsIn(storage.sevenDayReset(accountId), now),
+            sevenDayResets = TimeFmt.resetsSummary(storage.sevenDayReset(accountId), now),
             stale = TimeFmt.isStale(storage.fetchedAt(accountId), now),
         )
     }

@@ -26,6 +26,12 @@ class RefreshWorker(context: Context, params: WorkerParameters) :
         for (accountId in accountIds) {
             val result = UsageRepository(applicationContext, accountId).refresh()
             if (result is FetchResult.Soft) anySoft = true
+            if (result is FetchResult.Success && storage.notifyOnReset(accountId)) {
+                val label = storage.listAccounts().find { it.id == accountId }?.label ?: "Claude"
+                ResetNotificationWorker.schedule(
+                    applicationContext, accountId, label, storage.fiveHourReset(accountId)
+                )
+            }
         }
         // Snapshots + authState are already persisted by each repository; just re-render.
         UsageWidget.updateAll(applicationContext)

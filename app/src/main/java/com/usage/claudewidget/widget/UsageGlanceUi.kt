@@ -124,7 +124,7 @@ private fun MeterRow(label: String, pct: Int, resets: String) {
             )
             Spacer(GlanceModifier.defaultWeight())
             Text(
-                "resets in $resets",
+                resets,
                 style = TextStyle(color = GlanceTheme.colors.onSurfaceVariant),
             )
         }

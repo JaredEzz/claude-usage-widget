@@ -7,7 +7,9 @@ import androidx.glance.action.ActionParameters
 import androidx.glance.appwidget.GlanceAppWidgetManager
 import androidx.glance.appwidget.action.ActionCallback
 import com.usage.claudewidget.data.AccountStorage
+import com.usage.claudewidget.data.FetchResult
 import com.usage.claudewidget.data.UsageRepository
+import com.usage.claudewidget.work.ResetNotificationWorker
 
 /** Tap action when the widget is healthy: refresh only the account bound to THIS widget. */
 class RefreshAction : ActionCallback {
@@ -26,7 +28,12 @@ class RefreshAction : ActionCallback {
             context.startActivity(intent)
             return
         }
-        UsageRepository(context, accountId).refresh()
+        val storage = AccountStorage.get(context)
+        val result = UsageRepository(context, accountId).refresh()
+        if (result is FetchResult.Success && storage.notifyOnReset(accountId)) {
+            val label = storage.listAccounts().find { it.id == accountId }?.label ?: "Claude"
+            ResetNotificationWorker.schedule(context, accountId, label, storage.fiveHourReset(accountId))
+        }
         UsageWidget.updateAll(context)
     }
 }
