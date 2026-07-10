@@ -27,6 +27,11 @@ import kotlinx.coroutines.sync.withLock
  *
  * Pass [EXTRA_ACCOUNT_ID] to re-authenticate an existing account; omit it to create a new one.
  * Returns the (new or reused) accountId to the caller via [EXTRA_ACCOUNT_ID] in the result Intent.
+ *
+ * Pass [EXTRA_START_URL] to load a specific URL (e.g. an emailed magic-link) instead of the plain
+ * login page — lets a magic link be completed inside this app's own WebView/cookie jar rather than
+ * the device's default browser (whose cookies this app can never see). Not exported, so this is only
+ * reachable from within the app or via `adb shell am start`, not by other apps on the device.
  */
 class LoginActivity : Activity() {
 
@@ -84,7 +89,7 @@ class LoginActivity : Activity() {
                     tryCapture()
                 }
             }
-            loadUrl(Const.LOGIN_URL)
+            loadUrl(intent.getStringExtra(EXTRA_START_URL) ?: Const.LOGIN_URL)
         }
         setContentView(webView)
     }
@@ -123,5 +128,6 @@ class LoginActivity : Activity() {
 
     companion object {
         const val EXTRA_ACCOUNT_ID = "accountId"
+        const val EXTRA_START_URL = "startUrl"
     }
 }
