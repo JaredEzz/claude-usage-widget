@@ -91,13 +91,24 @@ class UsageRepository(private val context: Context, private val accountId: Strin
                         caps.optString(it).contains("chat", true) ||
                             caps.optString(it).contains("claude_ai", true)
                     }
-                    if (isChat) return o.optString("uuid").ifBlank { o.optString("id") }
+                    if (isChat) return o.optString("uuid").ifBlank { o.optString("id") }.also {
+                        labelFromOrg(o)
+                    }
                 }
-                arr.getJSONObject(0).let { it.optString("uuid").ifBlank { it.optString("id") } }
+                arr.getJSONObject(0).let {
+                    labelFromOrg(it)
+                    it.optString("uuid").ifBlank { it.optString("id") }
+                }
             }
         } catch (_: Exception) {
             null
         }
+    }
+
+    /** Replace the default "Account N" label with the org's real display name, once known. */
+    private fun labelFromOrg(o: org.json.JSONObject) {
+        val name = o.optString("name")
+        if (name.isNotBlank()) storage.setLabel(accountId, name)
     }
 
     private fun buildRequest(url: String): Request? {
