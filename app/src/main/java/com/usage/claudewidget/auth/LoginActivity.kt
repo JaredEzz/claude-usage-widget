@@ -34,6 +34,13 @@ import kotlinx.coroutines.sync.withLock
  * login page — lets a magic link be completed inside this app's own WebView/cookie jar rather than
  * the device's default browser (whose cookies this app can never see). Not exported, so this is only
  * reachable from within the app or via `adb shell am start`, not by other apps on the device.
+ *
+ * Pass [EXTRA_SEED_SESSION_KEY] (and optionally [EXTRA_SEED_CF_CLEARANCE]) to bootstrap an account
+ * from an already-valid sessionKey/cf_clearance pair instead of an interactive login -- e.g. one
+ * pulled from another install's WebView cookie jar before an uninstall, so switching to a new debug
+ * signing key doesn't force re-authenticating an account that was already signed in a moment ago.
+ * Seeds the cookie jar and loads claude.ai directly; the normal capture/harvest path takes it from
+ * there, so it's indistinguishable from a real login having just completed.
  */
 class LoginActivity : Activity() {
 
@@ -75,15 +82,20 @@ class LoginActivity : Activity() {
         val cm = CookieManager.getInstance()
         cm.setAcceptCookie(true)
         val startUrl = intent.getStringExtra(EXTRA_START_URL)
+        val seedSession = intent.getStringExtra(EXTRA_SEED_SESSION_KEY)
+        val seedCf = intent.getStringExtra(EXTRA_SEED_CF_CLEARANCE)
         // Wipe any prior account's session before logging in so the WebView can't silently reuse
         // it and harvest the wrong account's cookies. Skip when continuing an in-flight attempt via
-        // an explicit startUrl (e.g. a magic-link click) -- clearing here would drop the pending
-        // session/anti-CSRF cookie the original /login page + email submission just set, which is
-        // exactly what makes claude.ai treat the magic-link visit as a same-browser continuation
-        // instead of a cross-device verification challenge.
-        if (startUrl == null) {
+        // an explicit startUrl (e.g. a magic-link click) or seeding known-good cookies directly --
+        // clearing here would drop the pending session/anti-CSRF cookie the original /login page +
+        // email submission just set (for startUrl), or the cookies we're about to seed.
+        if (startUrl == null && seedSession == null) {
             cm.removeAllCookies(null)
             cm.flush()
+        }
+        if (seedSession != null) {
+            cm.setCookie(Const.BASE, "${Const.COOKIE_SESSION}=$seedSession; Domain=.claude.ai; Path=/")
+            seedCf?.let { cm.setCookie(Const.BASE, "${Const.COOKIE_CF}=$it; Domain=.claude.ai; Path=/") }
         }
 
         webView = WebView(this).apply {
@@ -98,7 +110,7 @@ class LoginActivity : Activity() {
                     tryCapture()
                 }
             }
-            loadUrl(startUrl ?: Const.LOGIN_URL)
+            loadUrl(startUrl ?: (if (seedSession != null) Const.BASE else Const.LOGIN_URL))
         }
         setContentView(webView)
 
@@ -169,5 +181,7 @@ class LoginActivity : Activity() {
     companion object {
         const val EXTRA_ACCOUNT_ID = "accountId"
         const val EXTRA_START_URL = "startUrl"
+        const val EXTRA_SEED_SESSION_KEY = "seedSessionKey"
+        const val EXTRA_SEED_CF_CLEARANCE = "seedCfClearance"
     }
 }
