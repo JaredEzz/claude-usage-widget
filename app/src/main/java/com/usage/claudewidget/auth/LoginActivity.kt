@@ -148,12 +148,13 @@ class LoginActivity : Activity() {
         // does not do this automatically. Without it, backgrounding this activity (e.g. switching
         // to another app to read a verification email) and returning can leave the WebView's
         // rendering surface permanently blank even though the underlying page is still loaded.
+        //
+        // Deliberately NOT calling webView.onPause() in onPause(): that stops JS/timer execution
+        // while backgrounded, and this login flow's code-verification step can involve async JS
+        // work completing shortly after the page navigates -- pausing it here risked the session
+        // cookie never finishing being set. onResume() alone is safe to call even without a prior
+        // pause and is enough to un-stick the rendering surface.
         if (::webView.isInitialized) webView.onResume()
-    }
-
-    override fun onPause() {
-        super.onPause()
-        if (::webView.isInitialized) webView.onPause()
     }
 
     override fun onDestroy() {
