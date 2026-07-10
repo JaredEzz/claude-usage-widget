@@ -30,6 +30,15 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-gradle-
 
+      - name: Cache debug signing key
+        uses: actions/cache@v4
+        with:
+          path: ~/.android/debug.keystore
+          # Fixed key (not content-hashed) -- created once, reused by every run after, so debug
+          # builds keep a stable signature and `adb install -r` can update in place instead of
+          # requiring an uninstall (which would wipe the app's WebView cookies / accounts).
+          key: debug-keystore-v1
+
       - name: Make gradlew executable
         run: chmod +x gradlew
 

@@ -4,6 +4,8 @@ import android.annotation.SuppressLint
 import android.app.Activity
 import android.content.Intent
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.webkit.CookieManager
 import android.webkit.WebView
 import android.webkit.WebViewClient
@@ -99,6 +101,22 @@ class LoginActivity : Activity() {
             loadUrl(startUrl ?: Const.LOGIN_URL)
         }
         setContentView(webView)
+
+        // claude.ai's post-login/post-code-verify transition to the main app is a client-side SPA
+        // route change (History API), not a full document navigation -- WebViewClient.onPageFinished
+        // never fires again after it, so the onPageFinished-triggered tryCapture() above can miss a
+        // sessionKey cookie that gets set purely via an XHR/fetch response. Poll as a fallback so
+        // login still completes for that path (e.g. after "Continue with Google", or a code-verify
+        // that lands straight on the app instead of reloading the login page).
+        pollForSessionCookie()
+    }
+
+    private fun pollForSessionCookie(attemptsLeft: Int = 60) {
+        if (captured || attemptsLeft <= 0) return
+        Handler(Looper.getMainLooper()).postDelayed({
+            tryCapture()
+            if (!captured) pollForSessionCookie(attemptsLeft - 1)
+        }, 1500)
     }
 
     private fun tryCapture() {
