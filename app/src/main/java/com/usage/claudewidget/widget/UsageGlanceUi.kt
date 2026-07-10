@@ -31,10 +31,12 @@ import androidx.glance.unit.ColorProvider
 import androidx.glance.LocalContext
 import android.content.Intent
 import com.usage.claudewidget.R
+import com.usage.claudewidget.auth.LoginActivity
 import com.usage.claudewidget.ui.MainActivity
 
-/** Immutable view state handed to the composable; assembled from Storage on each render. */
+/** Immutable view state handed to the composable; assembled from AccountStorage on each render. */
 data class WidgetState(
+    val accountId: String?,
     val needsLogin: Boolean,
     val hasData: Boolean,
     val fiveHourPct: Int,
@@ -57,7 +59,10 @@ fun UsageWidgetContent(state: WidgetState) {
     val context = LocalContext.current
 
     val tap = if (state.needsLogin) {
-        actionStartActivity(Intent(context, MainActivity::class.java))
+        // Re-authenticate THIS account (not a new one) if we know which one is bound.
+        val intent = Intent(context, MainActivity::class.java)
+        state.accountId?.let { intent.putExtra(LoginActivity.EXTRA_ACCOUNT_ID, it) }
+        actionStartActivity(intent)
     } else {
         actionRunCallback<RefreshAction>()
     }

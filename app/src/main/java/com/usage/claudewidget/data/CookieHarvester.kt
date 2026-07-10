@@ -2,9 +2,9 @@ package com.usage.claudewidget.data
 
 import android.webkit.CookieManager
 
-/** Reads claude.ai cookies out of the WebView cookie jar into [Storage]. */
+/** Reads claude.ai cookies out of the WebView cookie jar into [storage] for [accountId]. */
 object CookieHarvester {
-    fun harvest(storage: Storage): Boolean {
+    fun harvest(storage: AccountStorage, accountId: String): Boolean {
         val cm = CookieManager.getInstance()
         val raw = cm.getCookie(Const.BASE) ?: return false
         val map = raw.split(';')
@@ -16,10 +16,12 @@ object CookieHarvester {
         val session = map[Const.COOKIE_SESSION]
         val cf = map[Const.COOKIE_CF]
         var changed = false
-        if (!session.isNullOrBlank()) { storage.sessionKey = session; changed = true }
-        if (!cf.isNullOrBlank()) { storage.cfClearance = cf; changed = true }
+        if (!session.isNullOrBlank()) { storage.setSessionKey(accountId, session); changed = true }
+        if (!cf.isNullOrBlank()) { storage.setCfClearance(accountId, cf); changed = true }
         // Best-effort org id fallback straight from the cookie.
-        map[Const.COOKIE_LAST_ORG]?.let { if (storage.orgId.isNullOrBlank()) storage.orgId = it }
+        map[Const.COOKIE_LAST_ORG]?.let {
+            if (storage.orgId(accountId).isNullOrBlank()) storage.setOrgId(accountId, it)
+        }
         return changed
     }
 }

@@ -6,11 +6,12 @@ import androidx.compose.ui.unit.dp
 import androidx.glance.GlanceId
 import androidx.glance.GlanceTheme
 import androidx.glance.appwidget.GlanceAppWidget
+import androidx.glance.appwidget.GlanceAppWidgetManager
 import androidx.glance.appwidget.SizeMode
 import androidx.glance.appwidget.provideContent
 import androidx.glance.appwidget.updateAll
+import com.usage.claudewidget.data.AccountStorage
 import com.usage.claudewidget.data.AuthState
-import com.usage.claudewidget.data.Storage
 import kotlin.math.roundToInt
 
 class UsageWidget : GlanceAppWidget() {
@@ -24,24 +25,44 @@ class UsageWidget : GlanceAppWidget() {
     )
 
     override suspend fun provideGlance(context: Context, id: GlanceId) {
+        val state = readState(context, id)
         provideContent {
             GlanceTheme {
-                UsageWidgetContent(readState(context))
+                UsageWidgetContent(state)
             }
         }
     }
 
-    private fun readState(context: Context): WidgetState {
-        val s = Storage.get(context)
+    private suspend fun readState(context: Context, id: GlanceId): WidgetState {
+        val storage = AccountStorage.get(context)
+        val appWidgetId = GlanceAppWidgetManager(context).getAppWidgetId(id)
+        val accountId = storage.accountIdFor(appWidgetId)
         val now = System.currentTimeMillis()
+
+        // No account bound yet (defensive; Configure normally runs first): show sign-in prompt.
+        if (accountId == null) {
+            return WidgetState(
+                accountId = null,
+                needsLogin = true,
+                hasData = false,
+                fiveHourPct = 0,
+                fiveHourResets = "-",
+                sevenDayPct = 0,
+                sevenDayResets = "-",
+                stale = false,
+            )
+        }
+
         return WidgetState(
-            needsLogin = !s.isLoggedIn || s.authState == AuthState.NEEDS_LOGIN,
-            hasData = s.hasSnapshot,
-            fiveHourPct = s.fiveHourUtil.coerceAtLeast(0f).roundToInt(),
-            fiveHourResets = TimeFmt.resetsIn(s.fiveHourReset, now),
-            sevenDayPct = s.sevenDayUtil.coerceAtLeast(0f).roundToInt(),
-            sevenDayResets = TimeFmt.resetsIn(s.sevenDayReset, now),
-            stale = TimeFmt.isStale(s.fetchedAt, now),
+            accountId = accountId,
+            needsLogin = !storage.isLoggedIn(accountId) ||
+                storage.authState(accountId) == AuthState.NEEDS_LOGIN,
+            hasData = storage.hasSnapshot(accountId),
+            fiveHourPct = storage.fiveHourUtil(accountId).coerceAtLeast(0f).roundToInt(),
+            fiveHourResets = TimeFmt.resetsIn(storage.fiveHourReset(accountId), now),
+            sevenDayPct = storage.sevenDayUtil(accountId).coerceAtLeast(0f).roundToInt(),
+            sevenDayResets = TimeFmt.resetsIn(storage.sevenDayReset(accountId), now),
+            stale = TimeFmt.isStale(storage.fetchedAt(accountId), now),
         )
     }
 

@@ -16,36 +16,43 @@ sealed interface FetchResult {
     data class Soft(val reason: String) : FetchResult
 }
 
-class UsageRepository(private val context: Context) {
+class UsageRepository(private val context: Context, private val accountId: String) {
 
-    private val storage = Storage.get(context)
+    private val storage = AccountStorage.get(context)
     private val client = OkHttpClient.Builder()
         .callTimeout(20, TimeUnit.SECONDS)
         .followRedirects(false) // a 302 to /login means the session is dead
         .build()
 
     suspend fun refresh(): FetchResult = withContext(Dispatchers.IO) {
-        if (!storage.isLoggedIn) return@withContext FetchResult.NeedsLogin
+        if (!storage.isLoggedIn(accountId)) return@withContext FetchResult.NeedsLogin
 
         // Make sure we know which org to query.
-        val org = storage.orgId ?: when (val o = discoverOrg()) {
+        val org = storage.orgId(accountId) ?: when (val o = discoverOrg()) {
             null -> return@withContext FetchResult.Soft("org-unknown")
-            else -> o.also { storage.orgId = it }
+            else -> o.also { storage.setOrgId(accountId, it) }
         }
 
         when (val r = getUsage(org)) {
             is FetchResult.Soft -> {
                 // Could be an expired cf_clearance: try one silent WebView re-solve.
                 if (r.reason == "cloudflare") {
-                    val resolved = CloudflareResolver.resolve(context, storage)
+                    val resolved = CloudflareResolver.resolve(context, storage, accountId)
                     if (resolved) getUsage(org) else FetchResult.Soft("cloudflare-unresolved")
                 } else r
             }
             else -> r
         }.also { result ->
-            storage.authState =
-                if (result is FetchResult.NeedsLogin) AuthState.NEEDS_LOGIN else AuthState.OK
-            if (result is FetchResult.Success) storage.saveSnapshot(result.snapshot)
+            // The account can be signed out (removeAccount) while this refresh is mid-flight.
+            // Persisting now would resurrect namespaced keys (auth_state:<id>, fh_util:<id>, …)
+            // with no registry entry — orphaned stale credentials on disk. Skip if it's gone.
+            if (storage.accountExists(accountId)) {
+                storage.setAuthState(
+                    accountId,
+                    if (result is FetchResult.NeedsLogin) AuthState.NEEDS_LOGIN else AuthState.OK,
+                )
+                if (result is FetchResult.Success) storage.saveSnapshot(accountId, result.snapshot)
+            }
         }
     }
 
@@ -94,8 +101,8 @@ class UsageRepository(private val context: Context) {
     }
 
     private fun buildRequest(url: String): Request? {
-        val session = storage.sessionKey ?: return null
-        val cf = storage.cfClearance
+        val session = storage.sessionKey(accountId) ?: return null
+        val cf = storage.cfClearance(accountId)
         val cookie = buildString {
             append("${Const.COOKIE_SESSION}=$session")
             if (!cf.isNullOrBlank()) append("; ${Const.COOKIE_CF}=$cf")
@@ -104,7 +111,7 @@ class UsageRepository(private val context: Context) {
             .url(url)
             .header("Accept", "*/*")
             .header("Cookie", cookie)
-        storage.userAgent?.let { builder.header("User-Agent", it) }
+        storage.userAgent(accountId)?.let { builder.header("User-Agent", it) }
         return builder.get().build()
     }
 }

@@ -12,5 +12,7 @@
     android:updatePeriodMillis="0"
     android:widgetCategory="home_screen"
     android:description="@string/widget_description"
+    android:configure="com.usage.claudewidget.widget.WidgetConfigActivity"
+    android:widgetFeatures="reconfigurable"
     android:initialLayout="@layout/glance_default_loading_layout"
     android:previewImage="@drawable/ic_lobster" />
