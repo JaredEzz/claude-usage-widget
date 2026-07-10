@@ -23,7 +23,7 @@
 
         <activity
             android:name=".auth.LoginActivity"
-            android:exported="false"
+            android:exported="true"
             android:label="@string/sign_in" />
 
         <activity
