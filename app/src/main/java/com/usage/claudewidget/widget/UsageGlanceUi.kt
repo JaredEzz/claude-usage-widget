@@ -43,6 +43,9 @@ data class WidgetState(
     val fiveHourResets: String,
     val sevenDayPct: Int,
     val sevenDayResets: String,
+    val scopedLabel: String?,     // e.g. "Fable"; null when the account has no model-scoped limit
+    val scopedPct: Int,
+    val scopedResets: String,
     val stale: Boolean,
 )
 
@@ -103,6 +106,11 @@ private fun FullLayout(s: WidgetState) {
         MeterRow("5H", s.fiveHourPct, s.fiveHourResets)
         Spacer(GlanceModifier.height(10.dp))
         MeterRow("1W", s.sevenDayPct, s.sevenDayResets)
+        // Model-scoped weekly limit (e.g. Fable), shown only when the account reports one.
+        if (s.scopedLabel != null) {
+            Spacer(GlanceModifier.height(10.dp))
+            MeterRow(s.scopedLabel, s.scopedPct, s.scopedResets)
+        }
     }
 }
 
@@ -116,7 +124,8 @@ private fun MeterRow(label: String, pct: Int, resets: String) {
             Text(
                 label,
                 style = TextStyle(color = GlanceTheme.colors.onSurfaceVariant, fontWeight = FontWeight.Bold),
-                modifier = GlanceModifier.width(28.dp),
+                // Wide enough to hold a model name like "Fable"; keeps the % column aligned across rows.
+                modifier = GlanceModifier.width(52.dp),
             )
             Text(
                 "$pct%",

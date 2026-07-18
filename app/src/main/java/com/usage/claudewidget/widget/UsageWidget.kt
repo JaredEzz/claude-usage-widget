@@ -49,10 +49,14 @@ class UsageWidget : GlanceAppWidget() {
                 fiveHourResets = "-",
                 sevenDayPct = 0,
                 sevenDayResets = "-",
+                scopedLabel = null,
+                scopedPct = 0,
+                scopedResets = "-",
                 stale = false,
             )
         }
 
+        val hasScoped = storage.hasScoped(accountId)
         return WidgetState(
             accountId = accountId,
             needsLogin = !storage.isLoggedIn(accountId) ||
@@ -62,6 +66,9 @@ class UsageWidget : GlanceAppWidget() {
             fiveHourResets = TimeFmt.resetsSummary(storage.fiveHourReset(accountId), now),
             sevenDayPct = storage.sevenDayUtil(accountId).coerceAtLeast(0f).roundToInt(),
             sevenDayResets = TimeFmt.resetsSummary(storage.sevenDayReset(accountId), now),
+            scopedLabel = if (hasScoped) storage.scopedLabel(accountId) else null,
+            scopedPct = storage.scopedUtil(accountId).coerceAtLeast(0f).roundToInt(),
+            scopedResets = TimeFmt.resetsSummary(storage.scopedReset(accountId), now),
             stale = TimeFmt.isStale(storage.fetchedAt(accountId), now),
         )
     }

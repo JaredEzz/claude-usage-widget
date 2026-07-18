@@ -74,6 +74,9 @@ class AccountStorage private constructor(
             .remove("fh_reset:$accountId")
             .remove("wk_util:$accountId")
             .remove("wk_reset:$accountId")
+            .remove("sc_label:$accountId")
+            .remove("sc_util:$accountId")
+            .remove("sc_reset:$accountId")
             .remove("fetched_at:$accountId")
             .remove("auth_state:$accountId")
             .apply()
@@ -112,6 +115,13 @@ class AccountStorage private constructor(
     fun fiveHourReset(id: String): Long = snapshot.getLong("fh_reset:$id", 0L)
     fun sevenDayUtil(id: String): Float = snapshot.getFloat("wk_util:$id", -1f)
     fun sevenDayReset(id: String): Long = snapshot.getLong("wk_reset:$id", 0L)
+
+    /** Model-scoped weekly window (e.g. Fable); label is blank when the account has none. */
+    fun scopedLabel(id: String): String = snapshot.getString("sc_label:$id", "").orEmpty()
+    fun scopedUtil(id: String): Float = snapshot.getFloat("sc_util:$id", -1f)
+    fun scopedReset(id: String): Long = snapshot.getLong("sc_reset:$id", 0L)
+    fun hasScoped(id: String): Boolean = scopedLabel(id).isNotBlank() && scopedUtil(id) >= 0f
+
     fun fetchedAt(id: String): Long = snapshot.getLong("fetched_at:$id", 0L)
 
     fun hasSnapshot(id: String): Boolean = fiveHourUtil(id) >= 0f
@@ -124,13 +134,25 @@ class AccountStorage private constructor(
         snapshot.edit().putInt("auth_state:$id", v.ordinal).apply()
 
     fun saveSnapshot(id: String, s: UsageSnapshot) {
-        snapshot.edit()
+        val editor = snapshot.edit()
             .putFloat("fh_util:$id", s.fiveHour.utilization)
             .putLong("fh_reset:$id", s.fiveHour.resetsAtEpochMs)
             .putFloat("wk_util:$id", s.sevenDay.utilization)
             .putLong("wk_reset:$id", s.sevenDay.resetsAtEpochMs)
             .putLong("fetched_at:$id", s.fetchedAtEpochMs)
-            .apply()
+        // Persist the scoped weekly window when present; clear it otherwise so a model that
+        // drops off the account's limits doesn't leave a stale row behind on the widget.
+        val sc = s.scopedWeekly
+        if (sc != null) {
+            editor.putString("sc_label:$id", sc.label)
+                .putFloat("sc_util:$id", sc.window.utilization)
+                .putLong("sc_reset:$id", sc.window.resetsAtEpochMs)
+        } else {
+            editor.remove("sc_label:$id")
+                .remove("sc_util:$id")
+                .remove("sc_reset:$id")
+        }
+        editor.apply()
     }
 
     // ---- widget bindings (plain) ----
