@@ -3,8 +3,10 @@ package com.usage.claudewidget.data
 import android.content.Context
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONArray
 import java.util.concurrent.TimeUnit
 
@@ -85,7 +87,7 @@ class UsageRepository(private val context: Context, private val accountId: Strin
                     .url("https://cloudcode-pa.googleapis.com/v1internal:fetchAvailableModels")
                     .header("Authorization", "Bearer $token")
                     .header("Accept", "application/json")
-                    .post(okhttp3.RequestBody.create(okhttp3.MediaType.parse("application/json; charset=utf-8"), "{}"))
+                    .post("{}".toRequestBody("application/json; charset=utf-8".toMediaTypeOrNull()))
                     .build()
                 client.newCall(req).execute().use { resp ->
                     if (resp.code == 200) {
