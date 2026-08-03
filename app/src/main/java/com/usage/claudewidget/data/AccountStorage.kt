@@ -122,9 +122,21 @@ class AccountStorage private constructor(
     fun scopedReset(id: String): Long = snapshot.getLong("sc_reset:$id", 0L)
     fun hasScoped(id: String): Boolean = scopedLabel(id).isNotBlank() && scopedUtil(id) >= 0f
 
+    // ---- Antigravity (AGY) usage ----
+    fun agyUtil(id: String): Float = snapshot.getFloat("agy_util:$id", -1f)
+    fun agyReset(id: String): Long = snapshot.getLong("agy_reset:$id", 0L)
+    fun hasAgy(id: String): Boolean = agyUtil(id) >= 0f
+    fun agyScopedLabel(id: String): String = snapshot.getString("agy_sc_label:$id", "").orEmpty()
+    fun agyScopedUtil(id: String): Float = snapshot.getFloat("agy_sc_util:$id", -1f)
+    fun agyScopedReset(id: String): Long = snapshot.getLong("agy_sc_reset:$id", 0L)
+    fun hasAgyScoped(id: String): Boolean = agyScopedLabel(id).isNotBlank() && agyScopedUtil(id) >= 0f
+
+    fun agyToken(id: String): String? = secure.getString("agy_token:$id", null)
+    fun setAgyToken(id: String, v: String?) = secure.edit().putString("agy_token:$id", v).apply()
+
     fun fetchedAt(id: String): Long = snapshot.getLong("fetched_at:$id", 0L)
 
-    fun hasSnapshot(id: String): Boolean = fiveHourUtil(id) >= 0f
+    fun hasSnapshot(id: String): Boolean = fiveHourUtil(id) >= 0f || agyUtil(id) >= 0f
 
     /** AuthState ordinal; widget shows "Tap to sign in" when NEEDS_LOGIN. */
     fun authState(id: String): AuthState =
@@ -140,8 +152,6 @@ class AccountStorage private constructor(
             .putFloat("wk_util:$id", s.sevenDay.utilization)
             .putLong("wk_reset:$id", s.sevenDay.resetsAtEpochMs)
             .putLong("fetched_at:$id", s.fetchedAtEpochMs)
-        // Persist the scoped weekly window when present; clear it otherwise so a model that
-        // drops off the account's limits doesn't leave a stale row behind on the widget.
         val sc = s.scopedWeekly
         if (sc != null) {
             editor.putString("sc_label:$id", sc.label)
@@ -151,6 +161,17 @@ class AccountStorage private constructor(
             editor.remove("sc_label:$id")
                 .remove("sc_util:$id")
                 .remove("sc_reset:$id")
+        }
+        val agy = s.agyQuota
+        if (agy != null) {
+            editor.putFloat("agy_util:$id", agy.utilization)
+                .putLong("agy_reset:$id", agy.resetsAtEpochMs)
+        }
+        val agySc = s.agyScoped
+        if (agySc != null) {
+            editor.putString("agy_sc_label:$id", agySc.label)
+                .putFloat("agy_sc_util:$id", agySc.window.utilization)
+                .putLong("agy_sc_reset:$id", agySc.window.resetsAtEpochMs)
         }
         editor.apply()
     }

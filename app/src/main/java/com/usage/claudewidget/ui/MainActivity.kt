@@ -131,7 +131,7 @@ private fun SetupScreen(reAuthAccountId: String?) {
         modifier = Modifier.fillMaxSize().padding(24.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        Text("Claude Usage Widget", style = MaterialTheme.typography.headlineSmall)
+        Text("Claude & Antigravity Usage", style = MaterialTheme.typography.headlineSmall)
 
         if (accounts.isEmpty()) {
             Text("No accounts yet.", style = MaterialTheme.typography.bodyMedium)
@@ -140,6 +140,7 @@ private fun SetupScreen(reAuthAccountId: String?) {
         accounts.forEach { account ->
             AccountRow(
                 account = account,
+                storage = storage,
                 needsLogin = !storage.isLoggedIn(account.id),
                 notifyEnabled = storage.notifyOnReset(account.id),
                 onSignIn = { signIn(account.id) },
@@ -166,36 +167,74 @@ private fun SetupScreen(reAuthAccountId: String?) {
 @androidx.compose.runtime.Composable
 private fun AccountRow(
     account: Account,
+    storage: AccountStorage,
     needsLogin: Boolean,
     notifyEnabled: Boolean,
     onSignIn: () -> Unit,
     onSignOut: () -> Unit,
     onToggleNotify: (Boolean) -> Unit,
 ) {
-    Column(modifier = Modifier.fillMaxWidth()) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween,
-        ) {
-            Text(
-                account.label + if (needsLogin) " (signed out)" else "",
-                style = MaterialTheme.typography.titleMedium,
-            )
-            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                TextButton(onClick = onSignIn) {
-                    Text(if (needsLogin) "Sign in" else "Re-sign in")
+    val orangeColor = androidx.compose.ui.graphics.Color(0xFFF97316)
+    val blueColor = androidx.compose.ui.graphics.Color(0xFF2563EB)
+
+    val fhUtil = storage.fiveHourUtil(account.id).coerceAtLeast(0f).toInt()
+    val wkUtil = storage.sevenDayUtil(account.id).coerceAtLeast(0f).toInt()
+    val agyUtil = storage.agyUtil(account.id).coerceAtLeast(0f).toInt()
+    val hasAgy = storage.hasAgy(account.id)
+
+    Surface(
+        tonalElevation = 2.dp,
+        shape = androidx.compose.foundation.shape.RoundedCornerShape(12.dp),
+        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+    ) {
+        Column(modifier = Modifier.fillMaxWidth().padding(16.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                Text(
+                    account.label + if (needsLogin) " (signed out)" else "",
+                    style = MaterialTheme.typography.titleMedium,
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    TextButton(onClick = onSignIn) {
+                        Text(if (needsLogin) "Sign in" else "Re-sign in")
+                    }
+                    TextButton(onClick = onSignOut) { Text("Sign out") }
                 }
-                TextButton(onClick = onSignOut) { Text("Sign out") }
             }
-        }
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween,
-        ) {
-            Text("Notify at 5H reset", style = MaterialTheme.typography.bodyMedium)
-            Switch(checked = notifyEnabled, onCheckedChange = onToggleNotify)
+
+            if (!needsLogin && storage.hasSnapshot(account.id)) {
+                // Claude meter (Orange)
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text("Claude: ", style = MaterialTheme.typography.labelLarge, color = orangeColor)
+                    Text("5H $fhUtil%  |  1W $wkUtil%", style = MaterialTheme.typography.bodyMedium)
+                }
+
+                // Antigravity meter (Blue)
+                if (hasAgy) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text("AGY: ", style = MaterialTheme.typography.labelLarge, color = blueColor)
+                        Text("5H $agyUtil%", style = MaterialTheme.typography.bodyMedium)
+                    }
+                }
+            }
+
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                Text("Notify at 5H reset", style = MaterialTheme.typography.bodyMedium)
+                Switch(checked = notifyEnabled, onCheckedChange = onToggleNotify)
+            }
         }
     }
 }

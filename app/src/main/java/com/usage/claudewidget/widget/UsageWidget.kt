@@ -52,11 +52,20 @@ class UsageWidget : GlanceAppWidget() {
                 scopedLabel = null,
                 scopedPct = 0,
                 scopedResets = "-",
+                hasAgy = false,
+                agyPct = 0,
+                agyResets = "-",
+                agyScopedLabel = null,
+                agyScopedPct = 0,
+                agyScopedResets = "-",
                 stale = false,
             )
         }
 
         val hasScoped = storage.hasScoped(accountId)
+        val hasAgy = storage.hasAgy(accountId)
+        val hasAgyScoped = storage.hasAgyScoped(accountId)
+
         return WidgetState(
             accountId = accountId,
             needsLogin = !storage.isLoggedIn(accountId) ||
@@ -69,6 +78,12 @@ class UsageWidget : GlanceAppWidget() {
             scopedLabel = if (hasScoped) storage.scopedLabel(accountId) else null,
             scopedPct = storage.scopedUtil(accountId).coerceAtLeast(0f).roundToInt(),
             scopedResets = TimeFmt.resetsSummary(storage.scopedReset(accountId), now),
+            hasAgy = hasAgy,
+            agyPct = if (hasAgy) storage.agyUtil(accountId).coerceAtLeast(0f).roundToInt() else 0,
+            agyResets = if (hasAgy) TimeFmt.resetsSummary(storage.agyReset(accountId), now) else "-",
+            agyScopedLabel = if (hasAgyScoped) storage.agyScopedLabel(accountId) else null,
+            agyScopedPct = if (hasAgyScoped) storage.agyScopedUtil(accountId).coerceAtLeast(0f).roundToInt() else 0,
+            agyScopedResets = if (hasAgyScoped) TimeFmt.resetsSummary(storage.agyScopedReset(accountId), now) else "-",
             stale = TimeFmt.isStale(storage.fetchedAt(accountId), now),
         )
     }

@@ -46,13 +46,20 @@ data class WidgetState(
     val scopedLabel: String?,     // e.g. "Fable"; null when the account has no model-scoped limit
     val scopedPct: Int,
     val scopedResets: String,
+    val hasAgy: Boolean,
+    val agyPct: Int,
+    val agyResets: String,
+    val agyScopedLabel: String?,
+    val agyScopedPct: Int,
+    val agyScopedResets: String,
     val stale: Boolean,
 )
 
 private val COMPACT_MAX_WIDTH = 130.dp
 
-// Colors come from resources so they auto-adapt to light/dark via values-night.
-private val accent = ColorProvider(R.color.accent)
+// Colors: Claude in Orange, AGY in Blue.
+private val claudeAccent = ColorProvider(R.color.claude_accent)
+private val agyAccent = ColorProvider(R.color.agy_accent)
 private fun barTrack() = ColorProvider(R.color.bar_track)
 
 @Composable
@@ -62,7 +69,6 @@ fun UsageWidgetContent(state: WidgetState) {
     val context = LocalContext.current
 
     val tap = if (state.needsLogin) {
-        // Re-authenticate THIS account (not a new one) if we know which one is bound.
         val intent = Intent(context, MainActivity::class.java)
         state.accountId?.let { intent.putExtra(LoginActivity.EXTRA_ACCOUNT_ID, it) }
         actionStartActivity(intent)
@@ -92,30 +98,51 @@ fun UsageWidgetContent(state: WidgetState) {
 private fun FullLayout(s: WidgetState) {
     Column(modifier = GlanceModifier.fillMaxSize()) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Lobster(22.dp)
+            Lobster(20.dp)
             Spacer(GlanceModifier.width(6.dp))
             Text(
-                "Claude usage",
+                "Claude",
                 style = TextStyle(
-                    color = GlanceTheme.colors.onSurface,
+                    color = claudeAccent,
+                    fontWeight = FontWeight.Bold,
+                ),
+            )
+            Text(
+                " & ",
+                style = TextStyle(
+                    color = GlanceTheme.colors.onSurfaceVariant,
                     fontWeight = FontWeight.Medium,
                 ),
             )
+            Text(
+                "AGY",
+                style = TextStyle(
+                    color = agyAccent,
+                    fontWeight = FontWeight.Bold,
+                ),
+            )
         }
-        Spacer(GlanceModifier.height(10.dp))
-        MeterRow("5H", s.fiveHourPct, s.fiveHourResets)
-        Spacer(GlanceModifier.height(10.dp))
-        MeterRow("1W", s.sevenDayPct, s.sevenDayResets)
-        // Model-scoped weekly limit (e.g. Fable), shown only when the account reports one.
+        Spacer(GlanceModifier.height(8.dp))
+        MeterRow("Claude 5H", s.fiveHourPct, s.fiveHourResets, claudeAccent)
+        Spacer(GlanceModifier.height(6.dp))
+        MeterRow("Claude 1W", s.sevenDayPct, s.sevenDayResets, claudeAccent)
         if (s.scopedLabel != null) {
-            Spacer(GlanceModifier.height(10.dp))
-            MeterRow(s.scopedLabel, s.scopedPct, s.scopedResets)
+            Spacer(GlanceModifier.height(6.dp))
+            MeterRow(s.scopedLabel, s.scopedPct, s.scopedResets, claudeAccent)
+        }
+        if (s.hasAgy) {
+            Spacer(GlanceModifier.height(6.dp))
+            MeterRow("AGY 5H", s.agyPct, s.agyResets, agyAccent)
+        }
+        if (s.agyScopedLabel != null) {
+            Spacer(GlanceModifier.height(6.dp))
+            MeterRow(s.agyScopedLabel, s.agyScopedPct, s.agyScopedResets, agyAccent)
         }
     }
 }
 
 @Composable
-private fun MeterRow(label: String, pct: Int, resets: String) {
+private fun MeterRow(label: String, pct: Int, resets: String, color: ColorProvider) {
     Column(modifier = GlanceModifier.fillMaxWidth()) {
         Row(
             modifier = GlanceModifier.fillMaxWidth(),
@@ -124,8 +151,7 @@ private fun MeterRow(label: String, pct: Int, resets: String) {
             Text(
                 label,
                 style = TextStyle(color = GlanceTheme.colors.onSurfaceVariant, fontWeight = FontWeight.Bold),
-                // Wide enough to hold a model name like "Fable"; keeps the % column aligned across rows.
-                modifier = GlanceModifier.width(52.dp),
+                modifier = GlanceModifier.width(72.dp),
             )
             Text(
                 "$pct%",
@@ -137,8 +163,8 @@ private fun MeterRow(label: String, pct: Int, resets: String) {
                 style = TextStyle(color = GlanceTheme.colors.onSurfaceVariant),
             )
         }
-        Spacer(GlanceModifier.height(4.dp))
-        Bar(pct)
+        Spacer(GlanceModifier.height(3.dp))
+        Bar(pct, color)
     }
 }
 
@@ -146,15 +172,19 @@ private fun MeterRow(label: String, pct: Int, resets: String) {
 private fun CompactLayout(s: WidgetState) {
     Column(modifier = GlanceModifier.fillMaxSize()) {
         Lobster(16.dp)
-        Spacer(GlanceModifier.height(6.dp))
-        CompactMeter("5H", s.fiveHourPct)
-        Spacer(GlanceModifier.height(6.dp))
-        CompactMeter("1W", s.sevenDayPct)
+        Spacer(GlanceModifier.height(4.dp))
+        CompactMeter("Claude 5H", s.fiveHourPct, claudeAccent)
+        Spacer(GlanceModifier.height(4.dp))
+        CompactMeter("Claude 1W", s.sevenDayPct, claudeAccent)
+        if (s.hasAgy) {
+            Spacer(GlanceModifier.height(4.dp))
+            CompactMeter("AGY 5H", s.agyPct, agyAccent)
+        }
     }
 }
 
 @Composable
-private fun CompactMeter(label: String, pct: Int) {
+private fun CompactMeter(label: String, pct: Int, color: ColorProvider) {
     Column(modifier = GlanceModifier.fillMaxWidth()) {
         Row(modifier = GlanceModifier.fillMaxWidth()) {
             Text(
@@ -167,17 +197,17 @@ private fun CompactMeter(label: String, pct: Int) {
                 style = TextStyle(color = GlanceTheme.colors.onSurface, fontWeight = FontWeight.Bold),
             )
         }
-        Spacer(GlanceModifier.height(3.dp))
-        Bar(pct)
+        Spacer(GlanceModifier.height(2.dp))
+        Bar(pct, color)
     }
 }
 
 @Composable
-private fun Bar(pct: Int) {
+private fun Bar(pct: Int, color: ColorProvider) {
     LinearProgressIndicator(
         progress = (pct.coerceIn(0, 100)) / 100f,
         modifier = GlanceModifier.fillMaxWidth().height(6.dp).cornerRadius(3.dp),
-        color = accent,
+        color = color,
         backgroundColor = barTrack(),
     )
 }
@@ -186,7 +216,7 @@ private fun Bar(pct: Int) {
 private fun Lobster(s: androidx.compose.ui.unit.Dp) {
     Image(
         provider = ImageProvider(R.drawable.ic_lobster),
-        contentDescription = "Claude",
+        contentDescription = "Claude & AGY",
         modifier = GlanceModifier.size(s),
     )
 }
@@ -232,3 +262,4 @@ private fun StaleDot() {
         ) {}
     }
 }
+
