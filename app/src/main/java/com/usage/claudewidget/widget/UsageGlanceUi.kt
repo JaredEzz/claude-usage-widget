@@ -40,17 +40,22 @@ data class WidgetState(
     val needsLogin: Boolean,
     val hasData: Boolean,
     val fiveHourPct: Int,
+    val fiveHourElapsedPct: Int,
     val fiveHourResets: String,
     val sevenDayPct: Int,
+    val sevenDayElapsedPct: Int,
     val sevenDayResets: String,
     val scopedLabel: String?,     // e.g. "Fable"; null when the account has no model-scoped limit
     val scopedPct: Int,
+    val scopedElapsedPct: Int,
     val scopedResets: String,
     val hasAgy: Boolean,
     val agyPct: Int,
+    val agyElapsedPct: Int,
     val agyResets: String,
     val agyScopedLabel: String?,
     val agyScopedPct: Int,
+    val agyScopedElapsedPct: Int,
     val agyScopedResets: String,
     val stale: Boolean,
 )
@@ -123,26 +128,26 @@ private fun FullLayout(s: WidgetState) {
             )
         }
         Spacer(GlanceModifier.height(8.dp))
-        MeterRow("Claude 5H", s.fiveHourPct, s.fiveHourResets, claudeAccent)
+        MeterRow("Claude 5H", s.fiveHourPct, s.fiveHourElapsedPct, s.fiveHourResets, claudeAccent)
         Spacer(GlanceModifier.height(6.dp))
-        MeterRow("Claude 1W", s.sevenDayPct, s.sevenDayResets, claudeAccent)
+        MeterRow("Claude 1W", s.sevenDayPct, s.sevenDayElapsedPct, s.sevenDayResets, claudeAccent)
         if (s.scopedLabel != null) {
             Spacer(GlanceModifier.height(6.dp))
-            MeterRow(s.scopedLabel, s.scopedPct, s.scopedResets, claudeAccent)
+            MeterRow(s.scopedLabel, s.scopedPct, s.scopedElapsedPct, s.scopedResets, claudeAccent)
         }
         if (s.hasAgy) {
             Spacer(GlanceModifier.height(6.dp))
-            MeterRow("AGY 5H", s.agyPct, s.agyResets, agyAccent)
+            MeterRow("AGY 5H", s.agyPct, s.agyElapsedPct, s.agyResets, agyAccent)
         }
         if (s.agyScopedLabel != null) {
             Spacer(GlanceModifier.height(6.dp))
-            MeterRow(s.agyScopedLabel, s.agyScopedPct, s.agyScopedResets, agyAccent)
+            MeterRow(s.agyScopedLabel, s.agyScopedPct, s.agyScopedElapsedPct, s.agyScopedResets, agyAccent)
         }
     }
 }
 
 @Composable
-private fun MeterRow(label: String, pct: Int, resets: String, color: ColorProvider) {
+private fun MeterRow(label: String, pct: Int, elapsedPct: Int, resets: String, color: ColorProvider) {
     Column(modifier = GlanceModifier.fillMaxWidth()) {
         Row(
             modifier = GlanceModifier.fillMaxWidth(),
@@ -155,7 +160,14 @@ private fun MeterRow(label: String, pct: Int, resets: String, color: ColorProvid
             )
             Text(
                 "$pct%",
-                style = TextStyle(color = GlanceTheme.colors.onSurface, fontWeight = FontWeight.Bold),
+                style = TextStyle(
+                    color = if (pct > elapsedPct) ColorProvider(R.color.stale) else GlanceTheme.colors.onSurface,
+                    fontWeight = FontWeight.Bold,
+                ),
+            )
+            Text(
+                " / $elapsedPct%",
+                style = TextStyle(color = GlanceTheme.colors.onSurfaceVariant, fontWeight = FontWeight.Medium),
             )
             Spacer(GlanceModifier.defaultWeight())
             Text(
@@ -173,18 +185,18 @@ private fun CompactLayout(s: WidgetState) {
     Column(modifier = GlanceModifier.fillMaxSize()) {
         Lobster(16.dp)
         Spacer(GlanceModifier.height(4.dp))
-        CompactMeter("Claude 5H", s.fiveHourPct, claudeAccent)
+        CompactMeter("Claude 5H", s.fiveHourPct, s.fiveHourElapsedPct, claudeAccent)
         Spacer(GlanceModifier.height(4.dp))
-        CompactMeter("Claude 1W", s.sevenDayPct, claudeAccent)
+        CompactMeter("Claude 1W", s.sevenDayPct, s.sevenDayElapsedPct, claudeAccent)
         if (s.hasAgy) {
             Spacer(GlanceModifier.height(4.dp))
-            CompactMeter("AGY 5H", s.agyPct, agyAccent)
+            CompactMeter("AGY 5H", s.agyPct, s.agyElapsedPct, agyAccent)
         }
     }
 }
 
 @Composable
-private fun CompactMeter(label: String, pct: Int, color: ColorProvider) {
+private fun CompactMeter(label: String, pct: Int, elapsedPct: Int, color: ColorProvider) {
     Column(modifier = GlanceModifier.fillMaxWidth()) {
         Row(modifier = GlanceModifier.fillMaxWidth()) {
             Text(
@@ -193,8 +205,11 @@ private fun CompactMeter(label: String, pct: Int, color: ColorProvider) {
             )
             Spacer(GlanceModifier.defaultWeight())
             Text(
-                "$pct%",
-                style = TextStyle(color = GlanceTheme.colors.onSurface, fontWeight = FontWeight.Bold),
+                "$pct%/$elapsedPct%",
+                style = TextStyle(
+                    color = if (pct > elapsedPct) ColorProvider(R.color.stale) else GlanceTheme.colors.onSurface,
+                    fontWeight = FontWeight.Bold,
+                ),
             )
         }
         Spacer(GlanceModifier.height(2.dp))

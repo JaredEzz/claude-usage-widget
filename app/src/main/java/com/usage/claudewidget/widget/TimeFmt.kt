@@ -1,6 +1,23 @@
 package com.usage.claudewidget.widget
 
 object TimeFmt {
+    const val FIVE_HOUR_MS = 5L * 60 * 60 * 1000
+    const val SEVEN_DAY_MS = 7L * 24 * 60 * 60 * 1000
+
+    /**
+     * How far into a rolling window we are, as a percent, given its fixed [windowMs] duration
+     * and the [resetEpochMs] it next resets at. Lets you compare against [utilization] to see
+     * whether usage is running ahead of or behind the pace of the window itself.
+     */
+    fun elapsedPct(resetEpochMs: Long, windowMs: Long, now: Long = System.currentTimeMillis()): Int {
+        if (resetEpochMs <= 0L) return 0
+        val remainingMs = (resetEpochMs - now).coerceIn(0, windowMs)
+        val elapsedMs = windowMs - remainingMs
+        return ((elapsedMs.toDouble() / windowMs) * 100).roundToIntSafe()
+    }
+
+    private fun Double.roundToIntSafe(): Int = Math.round(this).toInt().coerceIn(0, 100)
+
     /** "resets in" value, e.g. "3h 12m", "5d 2h", "<1m", or "-" if unknown. */
     fun resetsIn(resetEpochMs: Long, now: Long = System.currentTimeMillis()): String {
         if (resetEpochMs <= 0L) return "-"
