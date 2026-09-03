@@ -39,61 +39,45 @@ class UsageWidget : GlanceAppWidget() {
         val accountId = storage.accountIdFor(appWidgetId)
         val now = System.currentTimeMillis()
 
-        // No account bound yet (defensive; Configure normally runs first): show sign-in prompt.
+        // No account bound yet: show sign-in prompt.
         if (accountId == null) {
             return WidgetState(
                 accountId = null,
                 needsLogin = true,
                 hasData = false,
-                fiveHourPct = 0,
-                fiveHourElapsedPct = 0,
-                fiveHourResets = "-",
-                sevenDayPct = 0,
-                sevenDayElapsedPct = 0,
-                sevenDayResets = "-",
-                scopedLabel = null,
-                scopedPct = 0,
-                scopedElapsedPct = 0,
-                scopedResets = "-",
-                hasAgy = false,
-                agyPct = 0,
-                agyElapsedPct = 0,
-                agyResets = "-",
-                agyScopedLabel = null,
-                agyScopedPct = 0,
-                agyScopedElapsedPct = 0,
-                agyScopedResets = "-",
+                gemini5hPct = 0,
+                gemini5hElapsedPct = 0,
+                gemini5hResets = "-",
+                geminiWeeklyPct = 0,
+                geminiWeeklyElapsedPct = 0,
+                geminiWeeklyResets = "-",
+                claude5hPct = 0,
+                claude5hElapsedPct = 0,
+                claude5hResets = "-",
+                claudeWeeklyPct = 0,
+                claudeWeeklyElapsedPct = 0,
+                claudeWeeklyResets = "-",
                 stale = false,
             )
         }
-
-        val hasScoped = storage.hasScoped(accountId)
-        val hasAgy = storage.hasAgy(accountId)
-        val hasAgyScoped = storage.hasAgyScoped(accountId)
 
         return WidgetState(
             accountId = accountId,
             needsLogin = !storage.isLoggedIn(accountId) ||
                 storage.authState(accountId) == AuthState.NEEDS_LOGIN,
             hasData = storage.hasSnapshot(accountId),
-            fiveHourPct = storage.fiveHourUtil(accountId).coerceAtLeast(0f).roundToInt(),
-            fiveHourElapsedPct = TimeFmt.elapsedPct(storage.fiveHourReset(accountId), TimeFmt.FIVE_HOUR_MS, now),
-            fiveHourResets = TimeFmt.resetsSummary(storage.fiveHourReset(accountId), now),
-            sevenDayPct = storage.sevenDayUtil(accountId).coerceAtLeast(0f).roundToInt(),
-            sevenDayElapsedPct = TimeFmt.elapsedPct(storage.sevenDayReset(accountId), TimeFmt.SEVEN_DAY_MS, now),
-            sevenDayResets = TimeFmt.resetsSummary(storage.sevenDayReset(accountId), now),
-            scopedLabel = if (hasScoped) storage.scopedLabel(accountId) else null,
-            scopedPct = storage.scopedUtil(accountId).coerceAtLeast(0f).roundToInt(),
-            scopedElapsedPct = TimeFmt.elapsedPct(storage.scopedReset(accountId), TimeFmt.SEVEN_DAY_MS, now),
-            scopedResets = TimeFmt.resetsSummary(storage.scopedReset(accountId), now),
-            hasAgy = hasAgy,
-            agyPct = if (hasAgy) storage.agyUtil(accountId).coerceAtLeast(0f).roundToInt() else 0,
-            agyElapsedPct = if (hasAgy) TimeFmt.elapsedPct(storage.agyReset(accountId), TimeFmt.FIVE_HOUR_MS, now) else 0,
-            agyResets = if (hasAgy) TimeFmt.resetsSummary(storage.agyReset(accountId), now) else "-",
-            agyScopedLabel = if (hasAgyScoped) storage.agyScopedLabel(accountId) else null,
-            agyScopedPct = if (hasAgyScoped) storage.agyScopedUtil(accountId).coerceAtLeast(0f).roundToInt() else 0,
-            agyScopedElapsedPct = if (hasAgyScoped) TimeFmt.elapsedPct(storage.agyScopedReset(accountId), TimeFmt.SEVEN_DAY_MS, now) else 0,
-            agyScopedResets = if (hasAgyScoped) TimeFmt.resetsSummary(storage.agyScopedReset(accountId), now) else "-",
+            gemini5hPct = storage.gemini5hUtil(accountId).coerceAtLeast(0f).roundToInt(),
+            gemini5hElapsedPct = TimeFmt.elapsedPct(storage.gemini5hReset(accountId), TimeFmt.FIVE_HOUR_MS, now),
+            gemini5hResets = TimeFmt.resetsSummary(storage.gemini5hReset(accountId), now),
+            geminiWeeklyPct = storage.geminiWeeklyUtil(accountId).coerceAtLeast(0f).roundToInt(),
+            geminiWeeklyElapsedPct = TimeFmt.elapsedPct(storage.geminiWeeklyReset(accountId), TimeFmt.SEVEN_DAY_MS, now),
+            geminiWeeklyResets = TimeFmt.resetsSummary(storage.geminiWeeklyReset(accountId), now),
+            claude5hPct = storage.claude5hUtil(accountId).coerceAtLeast(0f).roundToInt(),
+            claude5hElapsedPct = TimeFmt.elapsedPct(storage.claude5hReset(accountId), TimeFmt.FIVE_HOUR_MS, now),
+            claude5hResets = TimeFmt.resetsSummary(storage.claude5hReset(accountId), now),
+            claudeWeeklyPct = storage.claudeWeeklyUtil(accountId).coerceAtLeast(0f).roundToInt(),
+            claudeWeeklyElapsedPct = TimeFmt.elapsedPct(storage.claudeWeeklyReset(accountId), TimeFmt.SEVEN_DAY_MS, now),
+            claudeWeeklyResets = TimeFmt.resetsSummary(storage.claudeWeeklyReset(accountId), now),
             stale = TimeFmt.isStale(storage.fetchedAt(accountId), now),
         )
     }

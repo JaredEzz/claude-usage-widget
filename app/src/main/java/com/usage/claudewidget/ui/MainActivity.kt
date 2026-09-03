@@ -131,10 +131,11 @@ private fun SetupScreen(reAuthAccountId: String?) {
         modifier = Modifier.fillMaxSize().padding(24.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        Text("Claude & Antigravity Usage", style = MaterialTheme.typography.headlineSmall)
+        Text("Antigravity Usage", style = MaterialTheme.typography.headlineSmall)
+        Text("Google Models & Claude Models (matching agy usage)", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
 
         if (accounts.isEmpty()) {
-            Text("No accounts yet.", style = MaterialTheme.typography.bodyMedium)
+            Text("No Google accounts connected yet.", style = MaterialTheme.typography.bodyMedium)
         }
 
         accounts.forEach { account ->
@@ -144,6 +145,13 @@ private fun SetupScreen(reAuthAccountId: String?) {
                 needsLogin = !storage.isLoggedIn(account.id),
                 notifyEnabled = storage.notifyOnReset(account.id),
                 onSignIn = { signIn(account.id) },
+                onRefreshNow = {
+                    scope.launch {
+                        RefreshScheduler.refreshNow(context, account.id)
+                        UsageWidget.updateAll(context)
+                        accounts = storage.listAccounts()
+                    }
+                },
                 onSignOut = {
                     ResetNotificationWorker.cancel(context, account.id)
                     storage.removeAccount(account.id)
@@ -155,7 +163,7 @@ private fun SetupScreen(reAuthAccountId: String?) {
         }
 
         Button(onClick = { signIn(null) }) {
-            Text("Add account")
+            Text("Sign in with Google")
         }
 
         OutlinedButton(onClick = { requestBatteryExemption(context) }) {
@@ -171,16 +179,17 @@ private fun AccountRow(
     needsLogin: Boolean,
     notifyEnabled: Boolean,
     onSignIn: () -> Unit,
+    onRefreshNow: () -> Unit,
     onSignOut: () -> Unit,
     onToggleNotify: (Boolean) -> Unit,
 ) {
-    val orangeColor = androidx.compose.ui.graphics.Color(0xFFF97316)
     val blueColor = androidx.compose.ui.graphics.Color(0xFF2563EB)
+    val orangeColor = androidx.compose.ui.graphics.Color(0xFFF97316)
 
-    val fhUtil = storage.fiveHourUtil(account.id).coerceAtLeast(0f).toInt()
-    val wkUtil = storage.sevenDayUtil(account.id).coerceAtLeast(0f).toInt()
-    val agyUtil = storage.agyUtil(account.id).coerceAtLeast(0f).toInt()
-    val hasAgy = storage.hasAgy(account.id)
+    val g5hUtil = storage.gemini5hUtil(account.id).coerceAtLeast(0f).toInt()
+    val gwkUtil = storage.geminiWeeklyUtil(account.id).coerceAtLeast(0f).toInt()
+    val c5hUtil = storage.claude5hUtil(account.id).coerceAtLeast(0f).toInt()
+    val cwkUtil = storage.claudeWeeklyUtil(account.id).coerceAtLeast(0f).toInt()
 
     Surface(
         tonalElevation = 2.dp,
@@ -198,6 +207,7 @@ private fun AccountRow(
                     style = MaterialTheme.typography.titleMedium,
                 )
                 Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    TextButton(onClick = onRefreshNow) { Text("Refresh") }
                     TextButton(onClick = onSignIn) {
                         Text(if (needsLogin) "Sign in" else "Re-sign in")
                     }
@@ -206,24 +216,22 @@ private fun AccountRow(
             }
 
             if (!needsLogin && storage.hasSnapshot(account.id)) {
-                // Claude meter (Orange)
+                // Gemini meter (Google Blue)
                 Row(
                     modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Text("Claude: ", style = MaterialTheme.typography.labelLarge, color = orangeColor)
-                    Text("5H $fhUtil%  |  1W $wkUtil%", style = MaterialTheme.typography.bodyMedium)
+                    Text("Gemini: ", style = MaterialTheme.typography.labelLarge, color = blueColor)
+                    Text("5H $g5hUtil%  |  1W $gwkUtil%", style = MaterialTheme.typography.bodyMedium)
                 }
 
-                // Antigravity meter (Blue)
-                if (hasAgy) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Text("AGY: ", style = MaterialTheme.typography.labelLarge, color = blueColor)
-                        Text("5H $agyUtil%", style = MaterialTheme.typography.bodyMedium)
-                    }
+                // Claude meter (Orange)
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text("Claude: ", style = MaterialTheme.typography.labelLarge, color = orangeColor)
+                    Text("5H $c5hUtil%  |  1W $cwkUtil%", style = MaterialTheme.typography.bodyMedium)
                 }
             }
 

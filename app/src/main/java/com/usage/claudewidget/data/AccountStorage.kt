@@ -64,19 +64,29 @@ class AccountStorage private constructor(
     /** Clears an account's secrets + snapshot, unbinds any widgets, drops it from the registry. */
     fun removeAccount(accountId: String) {
         secure.edit()
+            .remove("refreshToken:$accountId")
+            .remove("accessToken:$accountId")
+            .remove("tokenExpiresAt:$accountId")
+            .remove("projectId:$accountId")
+            .remove("email:$accountId")
             .remove("sessionKey:$accountId")
             .remove("cf_clearance:$accountId")
             .remove("user_agent:$accountId")
             .remove("org_id:$accountId")
             .apply()
         snapshot.edit()
+            .remove("g5h_util:$accountId")
+            .remove("g5h_reset:$accountId")
+            .remove("gwk_util:$accountId")
+            .remove("gwk_reset:$accountId")
+            .remove("c5h_util:$accountId")
+            .remove("c5h_reset:$accountId")
+            .remove("cwk_util:$accountId")
+            .remove("cwk_reset:$accountId")
             .remove("fh_util:$accountId")
             .remove("fh_reset:$accountId")
             .remove("wk_util:$accountId")
             .remove("wk_reset:$accountId")
-            .remove("sc_label:$accountId")
-            .remove("sc_util:$accountId")
-            .remove("sc_reset:$accountId")
             .remove("fetched_at:$accountId")
             .remove("auth_state:$accountId")
             .apply()
@@ -95,48 +105,54 @@ class AccountStorage private constructor(
 
     // ---- credentials (encrypted, per account) ----
 
+    fun refreshToken(id: String): String? = secure.getString("refreshToken:$id", null)
+    fun setRefreshToken(id: String, v: String?) = secure.edit().putString("refreshToken:$id", v).apply()
+
+    fun accessToken(id: String): String? = secure.getString("accessToken:$id", null)
+    fun setAccessToken(id: String, v: String?) = secure.edit().putString("accessToken:$id", v).apply()
+
+    fun tokenExpiresAt(id: String): Long = secure.getLong("tokenExpiresAt:$id", 0L)
+    fun setTokenExpiresAt(id: String, v: Long) = secure.edit().putLong("tokenExpiresAt:$id", v).apply()
+
+    fun projectId(id: String): String? = secure.getString("projectId:$id", null)
+    fun setProjectId(id: String, v: String?) = secure.edit().putString("projectId:$id", v).apply()
+
+    fun email(id: String): String? = secure.getString("email:$id", null)
+    fun setEmail(id: String, v: String?) = secure.edit().putString("email:$id", v).apply()
+
+    // Legacy Claude credentials
     fun sessionKey(id: String): String? = secure.getString("sessionKey:$id", null)
     fun setSessionKey(id: String, v: String?) = secure.edit().putString("sessionKey:$id", v).apply()
-
     fun cfClearance(id: String): String? = secure.getString("cf_clearance:$id", null)
     fun setCfClearance(id: String, v: String?) = secure.edit().putString("cf_clearance:$id", v).apply()
-
     fun userAgent(id: String): String? = secure.getString("user_agent:$id", null)
     fun setUserAgent(id: String, v: String?) = secure.edit().putString("user_agent:$id", v).apply()
-
     fun orgId(id: String): String? = secure.getString("org_id:$id", null)
     fun setOrgId(id: String, v: String?) = secure.edit().putString("org_id:$id", v).apply()
 
-    fun isLoggedIn(id: String): Boolean = !sessionKey(id).isNullOrBlank()
+    fun isLoggedIn(id: String): Boolean = !refreshToken(id).isNullOrBlank() || !sessionKey(id).isNullOrBlank()
 
     // ---- usage snapshot (plain, read by the widget) ----
 
-    fun fiveHourUtil(id: String): Float = snapshot.getFloat("fh_util:$id", -1f)
-    fun fiveHourReset(id: String): Long = snapshot.getLong("fh_reset:$id", 0L)
-    fun sevenDayUtil(id: String): Float = snapshot.getFloat("wk_util:$id", -1f)
-    fun sevenDayReset(id: String): Long = snapshot.getLong("wk_reset:$id", 0L)
+    // Gemini models quota
+    fun gemini5hUtil(id: String): Float = snapshot.getFloat("g5h_util:$id", -1f)
+    fun gemini5hReset(id: String): Long = snapshot.getLong("g5h_reset:$id", 0L)
+    fun geminiWeeklyUtil(id: String): Float = snapshot.getFloat("gwk_util:$id", -1f)
+    fun geminiWeeklyReset(id: String): Long = snapshot.getLong("gwk_reset:$id", 0L)
 
-    /** Model-scoped weekly window (e.g. Fable); label is blank when the account has none. */
-    fun scopedLabel(id: String): String = snapshot.getString("sc_label:$id", "").orEmpty()
-    fun scopedUtil(id: String): Float = snapshot.getFloat("sc_util:$id", -1f)
-    fun scopedReset(id: String): Long = snapshot.getLong("sc_reset:$id", 0L)
-    fun hasScoped(id: String): Boolean = scopedLabel(id).isNotBlank() && scopedUtil(id) >= 0f
+    // Claude and GPT models quota
+    fun claude5hUtil(id: String): Float = snapshot.getFloat("c5h_util:$id", -1f)
+    fun claude5hReset(id: String): Long = snapshot.getLong("c5h_reset:$id", 0L)
+    fun claudeWeeklyUtil(id: String): Float = snapshot.getFloat("cwk_util:$id", -1f)
+    fun claudeWeeklyReset(id: String): Long = snapshot.getLong("cwk_reset:$id", 0L)
 
-    // ---- Antigravity (AGY) usage ----
-    fun agyUtil(id: String): Float = snapshot.getFloat("agy_util:$id", -1f)
-    fun agyReset(id: String): Long = snapshot.getLong("agy_reset:$id", 0L)
-    fun hasAgy(id: String): Boolean = agyUtil(id) >= 0f
-    fun agyScopedLabel(id: String): String = snapshot.getString("agy_sc_label:$id", "").orEmpty()
-    fun agyScopedUtil(id: String): Float = snapshot.getFloat("agy_sc_util:$id", -1f)
-    fun agyScopedReset(id: String): Long = snapshot.getLong("agy_sc_reset:$id", 0L)
-    fun hasAgyScoped(id: String): Boolean = agyScopedLabel(id).isNotBlank() && agyScopedUtil(id) >= 0f
-
-    fun agyToken(id: String): String? = secure.getString("agy_token:$id", null)
-    fun setAgyToken(id: String, v: String?) = secure.edit().putString("agy_token:$id", v).apply()
+    // Aliases for notifications / compatibility
+    fun fiveHourUtil(id: String): Float = if (gemini5hUtil(id) >= 0f) gemini5hUtil(id) else claude5hUtil(id)
+    fun fiveHourReset(id: String): Long = if (gemini5hReset(id) > 0L) gemini5hReset(id) else claude5hReset(id)
 
     fun fetchedAt(id: String): Long = snapshot.getLong("fetched_at:$id", 0L)
 
-    fun hasSnapshot(id: String): Boolean = fiveHourUtil(id) >= 0f || agyUtil(id) >= 0f
+    fun hasSnapshot(id: String): Boolean = gemini5hUtil(id) >= 0f || claude5hUtil(id) >= 0f
 
     /** AuthState ordinal; widget shows "Tap to sign in" when NEEDS_LOGIN. */
     fun authState(id: String): AuthState =
@@ -145,35 +161,18 @@ class AccountStorage private constructor(
     fun setAuthState(id: String, v: AuthState) =
         snapshot.edit().putInt("auth_state:$id", v.ordinal).apply()
 
-    fun saveSnapshot(id: String, s: UsageSnapshot) {
-        val editor = snapshot.edit()
-            .putFloat("fh_util:$id", s.fiveHour.utilization)
-            .putLong("fh_reset:$id", s.fiveHour.resetsAtEpochMs)
-            .putFloat("wk_util:$id", s.sevenDay.utilization)
-            .putLong("wk_reset:$id", s.sevenDay.resetsAtEpochMs)
+    fun saveSnapshot(id: String, s: AntigravitySnapshot) {
+        snapshot.edit()
+            .putFloat("g5h_util:$id", s.gemini5h.utilization)
+            .putLong("g5h_reset:$id", s.gemini5h.resetsAtEpochMs)
+            .putFloat("gwk_util:$id", s.geminiWeekly.utilization)
+            .putLong("gwk_reset:$id", s.geminiWeekly.resetsAtEpochMs)
+            .putFloat("c5h_util:$id", s.claude5h.utilization)
+            .putLong("c5h_reset:$id", s.claude5h.resetsAtEpochMs)
+            .putFloat("cwk_util:$id", s.claudeWeekly.utilization)
+            .putLong("cwk_reset:$id", s.claudeWeekly.resetsAtEpochMs)
             .putLong("fetched_at:$id", s.fetchedAtEpochMs)
-        val sc = s.scopedWeekly
-        if (sc != null) {
-            editor.putString("sc_label:$id", sc.label)
-                .putFloat("sc_util:$id", sc.window.utilization)
-                .putLong("sc_reset:$id", sc.window.resetsAtEpochMs)
-        } else {
-            editor.remove("sc_label:$id")
-                .remove("sc_util:$id")
-                .remove("sc_reset:$id")
-        }
-        val agy = s.agyQuota
-        if (agy != null) {
-            editor.putFloat("agy_util:$id", agy.utilization)
-                .putLong("agy_reset:$id", agy.resetsAtEpochMs)
-        }
-        val agySc = s.agyScoped
-        if (agySc != null) {
-            editor.putString("agy_sc_label:$id", agySc.label)
-                .putFloat("agy_sc_util:$id", agySc.window.utilization)
-                .putLong("agy_sc_reset:$id", agySc.window.resetsAtEpochMs)
-        }
-        editor.apply()
+            .apply()
     }
 
     // ---- widget bindings (plain) ----

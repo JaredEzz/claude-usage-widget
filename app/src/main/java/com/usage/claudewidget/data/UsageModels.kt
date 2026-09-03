@@ -1,93 +1,76 @@
 package com.usage.claudewidget.data
 
+import org.json.JSONArray
 import org.json.JSONObject
 
-/** One usage window (5-hour, 7-day, or AGY quota). */
+/** One usage window (5-hour, 7-day/weekly, etc.). */
 data class Window(
     val utilization: Float,      // percent, 0..100
     val resetsAtEpochMs: Long,   // absolute reset time
 )
 
-/** A model-scoped window, e.g. Fable or AGY Sonnet. [label] is the model's display name. */
-data class ScopedWindow(
-    val label: String,
-    val window: Window,
-)
-
-/** Parsed snapshot of Claude + Antigravity (AGY) usage endpoints. */
-data class UsageSnapshot(
-    val fiveHour: Window,
-    val sevenDay: Window,
-    val scopedWeekly: ScopedWindow?,
-    val agyQuota: Window?,
-    val agyScoped: ScopedWindow?,
+/**
+ * Snapshot of Antigravity usage returned by Google Cloud Code API's
+ * /v1internal:retrieveUserQuotaSummary endpoint (the same endpoint called by `agy usage`).
+ */
+data class AntigravitySnapshot(
+    val gemini5h: Window,
+    val geminiWeekly: Window,
+    val claude5h: Window,
+    val claudeWeekly: Window,
     val fetchedAtEpochMs: Long,
 ) {
     companion object {
-        fun parseClaude(body: String, now: Long, agyQuota: Window? = null, agyScoped: ScopedWindow? = null): UsageSnapshot {
+        fun parseQuotaSummary(body: String, now: Long): AntigravitySnapshot {
             val root = JSONObject(body)
-            return UsageSnapshot(
-                fiveHour = root.getJSONObject("five_hour").toWindow(),
-                sevenDay = root.getJSONObject("seven_day").toWindow(),
-                scopedWeekly = root.scopedWeekly(),
-                agyQuota = agyQuota,
-                agyScoped = agyScoped,
-                fetchedAtEpochMs = now,
-            )
-        }
+            val groups = root.optJSONArray("groups") ?: JSONArray()
+            var gemini5h = Window(0f, 0L)
+            var geminiWeekly = Window(0f, 0L)
+            var claude5h = Window(0f, 0L)
+            var claudeWeekly = Window(0f, 0L)
 
-        fun parseAgy(body: String, now: Long): Pair<Window?, ScopedWindow?> {
-            return try {
-                val root = JSONObject(body)
-                val models = root.optJSONArray("models") ?: return Pair(null, null)
-                var mainQuota: Window? = null
-                var scopedQuota: ScopedWindow? = null
+            for (i in 0 until groups.length()) {
+                val group = groups.optJSONObject(i) ?: continue
+                val displayName = group.optString("displayName", "")
+                val isGemini = displayName.contains("Gemini", ignoreCase = true)
+                val isClaude = displayName.contains("Claude", ignoreCase = true) ||
+                    displayName.contains("GPT", ignoreCase = true) ||
+                    displayName.contains("3p", ignoreCase = true)
 
-                for (i in 0 until models.length()) {
-                    val m = models.optJSONObject(i) ?: continue
-                    if (m.optBoolean("isAutocompleteOnly", false)) continue
-                    val remPct = m.optDouble("remainingPercentage", 1.0).toFloat()
-                    val util = ((1.0f - remPct) * 100f).coerceIn(0f, 100f)
-                    val resetTimeStr = m.optString("resetTime", "")
-                    val resetMs = Iso8601.toEpochMs(resetTimeStr)
-                    val label = m.optString("label", "AGY").ifBlank { "AGY" }
-                    val modelId = m.optString("modelId", "")
+                val buckets = group.optJSONArray("buckets") ?: JSONArray()
+                for (j in 0 until buckets.length()) {
+                    val bucket = buckets.optJSONObject(j) ?: continue
+                    val windowType = bucket.optString("window", "")
+                    val bucketId = bucket.optString("bucketId", "")
+                    val remFrac = bucket.optDouble("remainingFraction", 1.0).toFloat()
+                    val util = ((1.0f - remFrac) * 100f).coerceIn(0f, 100f)
+                    val resetTime = bucket.optString("resetTime", "")
+                    val resetEpochMs = if (resetTime.isNotBlank()) Iso8601.toEpochMs(resetTime) else 0L
+                    val win = Window(util, resetEpochMs)
 
-                    val win = Window(utilization = util, resetsAtEpochMs = resetMs)
-                    if (mainQuota == null || modelId.contains("flash", ignoreCase = true)) {
-                        mainQuota = win
-                    } else if (scopedQuota == null) {
-                        scopedQuota = ScopedWindow(label = label.take(12), window = win)
+                    if (isGemini) {
+                        if (windowType == "5h" || bucketId.contains("5h")) {
+                            gemini5h = win
+                        } else if (windowType == "weekly" || bucketId.contains("weekly")) {
+                            geminiWeekly = win
+                        }
+                    } else if (isClaude) {
+                        if (windowType == "5h" || bucketId.contains("5h")) {
+                            claude5h = win
+                        } else if (windowType == "weekly" || bucketId.contains("weekly")) {
+                            claudeWeekly = win
+                        }
                     }
                 }
-                Pair(mainQuota, scopedQuota)
-            } catch (_: Exception) {
-                Pair(null, null)
             }
-        }
 
-        private fun JSONObject.toWindow(): Window {
-            val util = optDouble("utilization", 0.0).toFloat()
-            val reset = optString("resets_at", "")
-            return Window(util, Iso8601.toEpochMs(reset))
-        }
-
-        private fun JSONObject.scopedWeekly(): ScopedWindow? {
-            val limits = optJSONArray("limits") ?: return null
-            for (i in 0 until limits.length()) {
-                val entry = limits.optJSONObject(i) ?: continue
-                if (entry.optString("kind") != "weekly_scoped") continue
-                val label = entry.optJSONObject("scope")
-                    ?.optJSONObject("model")
-                    ?.optString("display_name")
-                    ?.takeIf { it.isNotBlank() } ?: continue
-                val window = Window(
-                    entry.optDouble("percent", 0.0).toFloat(),
-                    Iso8601.toEpochMs(entry.optString("resets_at", "")),
-                )
-                return ScopedWindow(label, window)
-            }
-            return null
+            return AntigravitySnapshot(
+                gemini5h = gemini5h,
+                geminiWeekly = geminiWeekly,
+                claude5h = claude5h,
+                claudeWeekly = claudeWeekly,
+                fetchedAtEpochMs = now,
+            )
         }
     }
 }

@@ -1,187 +1,376 @@
 package com.usage.claudewidget.auth
 
-import android.annotation.SuppressLint
 import android.app.Activity
 import android.content.Intent
+import android.net.Uri
 import android.os.Bundle
-import android.os.Handler
-import android.os.Looper
-import android.webkit.CookieManager
-import android.webkit.WebView
-import android.webkit.WebViewClient
 import android.widget.Toast
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.setContent
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
 import com.usage.claudewidget.data.AccountStorage
+import com.usage.claudewidget.data.AuthState
 import com.usage.claudewidget.data.Const
-import com.usage.claudewidget.data.CookieHarvester
-import com.usage.claudewidget.data.CookieJarLock
 import com.usage.claudewidget.widget.UsageWidget
 import com.usage.claudewidget.work.RefreshScheduler
-import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.MainScope
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
+import okhttp3.FormBody
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import okhttp3.RequestBody.Companion.toRequestBody
+import org.json.JSONObject
+import java.io.BufferedReader
+import java.io.InputStreamReader
+import java.net.InetAddress
+import java.net.ServerSocket
+import java.util.UUID
 
-/**
- * One-time interactive login. Loads claude.ai in a WebView; once a sessionKey cookie
- * appears, harvests cookies + the WebView's User-Agent into an account slot, then finishes.
- *
- * Pass [EXTRA_ACCOUNT_ID] to re-authenticate an existing account; omit it to create a new one.
- * Returns the (new or reused) accountId to the caller via [EXTRA_ACCOUNT_ID] in the result Intent.
- *
- * Pass [EXTRA_START_URL] to load a specific URL (e.g. an emailed magic-link) instead of the plain
- * login page — lets a magic link be completed inside this app's own WebView/cookie jar rather than
- * the device's default browser (whose cookies this app can never see). Not exported, so this is only
- * reachable from within the app or via `adb shell am start`, not by other apps on the device.
- *
- * Pass [EXTRA_SEED_SESSION_KEY] (and optionally [EXTRA_SEED_CF_CLEARANCE]) to bootstrap an account
- * from an already-valid sessionKey/cf_clearance pair instead of an interactive login -- e.g. one
- * pulled from another install's WebView cookie jar before an uninstall, so switching to a new debug
- * signing key doesn't force re-authenticating an account that was already signed in a moment ago.
- * Seeds the cookie jar and loads claude.ai directly; the normal capture/harvest path takes it from
- * there, so it's indistinguishable from a real login having just completed.
- */
-class LoginActivity : Activity() {
+class LoginActivity : ComponentActivity() {
 
-    private lateinit var webView: WebView
     private val storage by lazy { AccountStorage.get(this) }
     private lateinit var accountId: String
-    private var captured = false
-
-    // Scope for the lock-holding login coroutine; cancelled in onDestroy so an abandoned login
-    // (user backs out before a sessionKey appears) releases the shared jar lock.
     private val scope = MainScope()
-    // Completed by tryCapture() once harvesting is done (or by onDestroy if login is abandoned),
-    // so the lock-holding coroutine below stays suspended — and keeps the jar lock — for the whole
-    // interactive login rather than releasing it between WebView callbacks.
-    private val loginDone = kotlinx.coroutines.CompletableDeferred<Unit>()
 
-    @SuppressLint("SetJavaScriptEnabled")
+    private var serverSocket: ServerSocket? = null
+    private var loopbackPort: Int = 0
+    private var currentAuthUrl: String = ""
+
+    private var isAuthenticatingState = mutableStateOf(false)
+    private var statusMessageState = mutableStateOf("Opening browser for Google Sign-In...")
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        // Existing account (re-auth) reuses its id; a fresh login mints a new one.
         accountId = intent.getStringExtra(EXTRA_ACCOUNT_ID) ?: storage.createAccount()
 
-        // The WebView cookie jar is a process-global; a concurrent background re-solve
-        // (RefreshWorker / RefreshAction) can clearJar() at any moment and wipe this live login
-        // session, or we could clear/harvest across theirs. Hold the shared jar lock for the whole
-        // login — clear → interactive load → harvest — so no background component touches the jar
-        // mid-login. The lock releases when loginDone completes (capture) or onDestroy cancels.
-        scope.launch {
-            CookieJarLock.mutex.withLock {
-                startLogin()
-                loginDone.await()
-            }
-        }
-    }
-
-    @SuppressLint("SetJavaScriptEnabled")
-    private fun startLogin() {
-        val cm = CookieManager.getInstance()
-        cm.setAcceptCookie(true)
-        val startUrl = intent.getStringExtra(EXTRA_START_URL)
-        val seedSession = intent.getStringExtra(EXTRA_SEED_SESSION_KEY)
-        val seedCf = intent.getStringExtra(EXTRA_SEED_CF_CLEARANCE)
-        // Wipe any prior account's session before logging in so the WebView can't silently reuse
-        // it and harvest the wrong account's cookies. Skip when continuing an in-flight attempt via
-        // an explicit startUrl (e.g. a magic-link click) or seeding known-good cookies directly --
-        // clearing here would drop the pending session/anti-CSRF cookie the original /login page +
-        // email submission just set (for startUrl), or the cookies we're about to seed.
-        if (startUrl == null && seedSession == null) {
-            cm.removeAllCookies(null)
-            cm.flush()
-        }
-        if (seedSession != null) {
-            cm.setCookie(Const.BASE, "${Const.COOKIE_SESSION}=$seedSession; Domain=.claude.ai; Path=/")
-            seedCf?.let { cm.setCookie(Const.BASE, "${Const.COOKIE_CF}=$it; Domain=.claude.ai; Path=/") }
+        // Check if seed tokens were passed (e.g. from CLI / adb)
+        val seedRefresh = intent.getStringExtra(EXTRA_SEED_REFRESH_TOKEN)
+        if (!seedRefresh.isNullOrBlank()) {
+            handleSeedLogin(seedRefresh)
+            return
         }
 
-        webView = WebView(this).apply {
-            cm.setAcceptThirdPartyCookies(this, true)
-            settings.javaScriptEnabled = true
-            settings.domStorageEnabled = true
-            // Persist the exact UA so cf_clearance stays valid for headless fetches.
-            storage.setUserAgent(accountId, settings.userAgentString)
-
-            webViewClient = object : WebViewClient() {
-                override fun onPageFinished(view: WebView, url: String) {
-                    tryCapture()
+        setContent {
+            MaterialTheme {
+                Surface(modifier = Modifier.fillMaxSize()) {
+                    val isAuth by remember { isAuthenticatingState }
+                    val status by remember { statusMessageState }
+                    LoginScreen(
+                        isAuthenticating = isAuth,
+                        statusMessage = status,
+                        onOpenBrowser = { openBrowser(currentAuthUrl) },
+                        onSubmitCode = { codeOrUrl -> submitManualCode(codeOrUrl) },
+                    )
                 }
             }
-            loadUrl(startUrl ?: (if (seedSession != null) Const.BASE else Const.LOGIN_URL))
         }
-        setContentView(webView)
 
-        // claude.ai's post-login/post-code-verify transition to the main app is a client-side SPA
-        // route change (History API), not a full document navigation -- WebViewClient.onPageFinished
-        // never fires again after it, so the onPageFinished-triggered tryCapture() above can miss a
-        // sessionKey cookie that gets set purely via an XHR/fetch response. Poll as a fallback so
-        // login still completes for that path (e.g. after "Continue with Google", or a code-verify
-        // that lands straight on the app instead of reloading the login page).
-        pollForSessionCookie()
+        startOAuthServer()
     }
 
-    private fun pollForSessionCookie(attemptsLeft: Int = 60) {
-        if (captured || attemptsLeft <= 0) return
-        Handler(Looper.getMainLooper()).postDelayed({
-            tryCapture()
-            if (!captured) pollForSessionCookie(attemptsLeft - 1)
-        }, 1500)
+    private fun handleSeedLogin(seedRefresh: String) {
+        storage.setRefreshToken(accountId, seedRefresh)
+        val seedAccess = intent.getStringExtra(EXTRA_SEED_ACCESS_TOKEN)
+        val seedProject = intent.getStringExtra(EXTRA_SEED_PROJECT_ID)
+        val seedEmail = intent.getStringExtra(EXTRA_SEED_EMAIL)
+        if (!seedAccess.isNullOrBlank()) storage.setAccessToken(accountId, seedAccess)
+        if (!seedProject.isNullOrBlank()) storage.setProjectId(accountId, seedProject)
+        if (!seedEmail.isNullOrBlank()) {
+            storage.setEmail(accountId, seedEmail)
+            storage.setLabel(accountId, seedEmail)
+        }
+        storage.setAuthState(accountId, AuthState.OK)
+        onLoginComplete("Signed in via seed credentials")
     }
 
-    private fun tryCapture() {
-        if (captured) return
-        val cookies = CookieManager.getInstance().getCookie(Const.BASE) ?: return
-        if (!cookies.contains("${Const.COOKIE_SESSION}=")) return
+    private fun startOAuthServer() {
+        scope.launch(Dispatchers.IO) {
+            try {
+                val server = ServerSocket(0, 1, InetAddress.getByName("127.0.0.1"))
+                serverSocket = server
+                loopbackPort = server.localPort
+                val redirectUri = "http://127.0.0.1:$loopbackPort/callback"
+                val state = UUID.randomUUID().toString().substring(0, 12)
+                val scopesJoined = Const.GOOGLE_SCOPES.joinToString("%20")
+                currentAuthUrl = "${Const.GOOGLE_AUTH_URL}?client_id=${Const.GOOGLE_CLIENT_ID}&redirect_uri=$redirectUri&response_type=code&scope=$scopesJoined&access_type=offline&prompt=consent&state=$state"
 
-        captured = true
-        CookieManager.getInstance().flush()
-        CookieHarvester.harvest(storage, accountId)
-        // Release the jar lock now that harvesting is done; the follow-up work below only touches
-        // per-account storage + WorkManager, not the cookie jar.
-        loginDone.complete(Unit)
+                withContext(Dispatchers.Main) {
+                    openBrowser(currentAuthUrl)
+                }
 
-        // Discover org + first snapshot, then schedule periodic refresh.
-        CoroutineScope(Dispatchers.Main).launch {
+                val socket = server.accept()
+                val reader = BufferedReader(InputStreamReader(socket.getInputStream()))
+                val firstLine = reader.readLine().orEmpty()
+                val path = firstLine.substringAfter("GET ", "").substringBefore(" HTTP")
+                val callbackUri = Uri.parse("http://127.0.0.1$path")
+                val code = callbackUri.getQueryParameter("code")
+
+                val html = """
+                    <!DOCTYPE html>
+                    <html>
+                    <head><meta name="viewport" content="width=device-width, initial-scale=1.0"></head>
+                    <body style="font-family: -apple-system, Roboto, sans-serif; text-align: center; padding: 40px 20px; background: #0f172a; color: #f8fafc;">
+                      <h2 style="color: #60a5fa;">✓ Antigravity Connected</h2>
+                      <p>You're signed in! You can close this tab and return to the app.</p>
+                    </body>
+                    </html>
+                """.trimIndent()
+
+                val bytes = html.toByteArray(Charsets.UTF_8)
+                val resp = "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=UTF-8\r\nContent-Length: ${bytes.size}\r\nConnection: close\r\n\r\n"
+                socket.getOutputStream().apply {
+                    write(resp.toByteArray(Charsets.UTF_8))
+                    write(bytes)
+                    flush()
+                }
+                socket.close()
+                server.close()
+
+                if (!code.isNullOrBlank()) {
+                    withContext(Dispatchers.Main) {
+                        isAuthenticatingState.value = true
+                        statusMessageState.value = "Authenticating with Google..."
+                    }
+                    val ok = exchangeCodeAndSave(code, redirectUri)
+                    withContext(Dispatchers.Main) {
+                        isAuthenticatingState.value = false
+                        if (ok) {
+                            onLoginComplete("Signed in successfully")
+                        } else {
+                            statusMessageState.value = "Authentication failed. Please try again."
+                        }
+                    }
+                }
+            } catch (_: Exception) {
+                // Server closed
+            }
+        }
+    }
+
+    private fun openBrowser(url: String) {
+        if (url.isBlank()) return
+        try {
+            val browserIntent = Intent(Intent.ACTION_VIEW, Uri.parse(url)).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            startActivity(browserIntent)
+        } catch (_: Exception) {
+            statusMessageState.value = "Please open the sign-in URL manually or paste code below."
+        }
+    }
+
+    private fun submitManualCode(input: String) {
+        val trimmed = input.trim()
+        if (trimmed.isBlank()) return
+        val code = if (trimmed.contains("code=")) {
+            Uri.parse(if (trimmed.startsWith("http")) trimmed else "http://dummy?$trimmed").getQueryParameter("code") ?: trimmed
+        } else {
+            trimmed
+        }
+        val redirectUri = "http://127.0.0.1:$loopbackPort/callback"
+        scope.launch {
+            isAuthenticatingState.value = true
+            statusMessageState.value = "Exchanging authorization code..."
+            val ok = exchangeCodeAndSave(code, redirectUri)
+            isAuthenticatingState.value = false
+            if (ok) {
+                onLoginComplete("Signed in successfully")
+            } else {
+                statusMessageState.value = "Invalid authorization code. Please try again."
+            }
+        }
+    }
+
+    private suspend fun exchangeCodeAndSave(code: String, redirectUri: String): Boolean = withContext(Dispatchers.IO) {
+        val client = OkHttpClient()
+        val form = FormBody.Builder()
+            .add("client_id", Const.GOOGLE_CLIENT_ID)
+            .add("client_secret", Const.GOOGLE_CLIENT_SECRET)
+            .add("code", code)
+            .add("grant_type", "authorization_code")
+            .add("redirect_uri", redirectUri)
+            .build()
+
+        val req = Request.Builder()
+            .url(Const.GOOGLE_TOKEN_URL)
+            .post(form)
+            .build()
+
+        try {
+            val tokenResp = client.newCall(req).execute().use { resp ->
+                if (!resp.isSuccessful) return@withContext false
+                JSONObject(resp.body?.string().orEmpty())
+            }
+
+            val accessToken = tokenResp.optString("access_token")
+            val refreshToken = tokenResp.optString("refresh_token")
+            val expiresIn = tokenResp.optLong("expires_in", 3600L)
+            if (accessToken.isBlank()) return@withContext false
+
+            // Fetch user email
+            val userReq = Request.Builder()
+                .url(Const.GOOGLE_USER_INFO_URL)
+                .header("Authorization", "Bearer $accessToken")
+                .build()
+
+            val email = client.newCall(userReq).execute().use { resp ->
+                if (resp.isSuccessful) {
+                    JSONObject(resp.body?.string().orEmpty()).optString("email")
+                } else null
+            }
+
+            // Resolve project ID
+            val metaJson = JSONObject().apply {
+                put("metadata", JSONObject().apply {
+                    put("ideType", "ANTIGRAVITY")
+                    put("platform", "PLATFORM_UNSPECIFIED")
+                    put("pluginType", "GEMINI")
+                })
+            }
+            val projReq = Request.Builder()
+                .url(Const.LOAD_CODE_ASSIST_URL)
+                .header("Authorization", "Bearer $accessToken")
+                .header("User-Agent", Const.USER_AGENT)
+                .header("Content-Type", "application/json")
+                .post(metaJson.toString().toRequestBody("application/json".toMediaType()))
+                .build()
+
+            val projectId = client.newCall(projReq).execute().use { resp ->
+                if (resp.isSuccessful) {
+                    val json = JSONObject(resp.body?.string().orEmpty())
+                    val comp = json.opt("cloudaicompanionProject")
+                    when (comp) {
+                        is String -> comp
+                        is JSONObject -> comp.optString("id")
+                        else -> null
+                    }
+                } else null
+            }
+
+            storage.setAccessToken(accountId, accessToken)
+            if (refreshToken.isNotBlank()) {
+                storage.setRefreshToken(accountId, refreshToken)
+            }
+            storage.setTokenExpiresAt(accountId, System.currentTimeMillis() + expiresIn * 1000L)
+            if (!projectId.isNullOrBlank()) {
+                storage.setProjectId(accountId, projectId)
+            }
+            if (!email.isNullOrBlank()) {
+                storage.setEmail(accountId, email)
+                storage.setLabel(accountId, email)
+            }
+            storage.setAuthState(accountId, AuthState.OK)
+            true
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    private fun onLoginComplete(message: String) {
+        scope.launch(Dispatchers.Main) {
             RefreshScheduler.ensurePeriodic(this@LoginActivity)
-            RefreshScheduler.refreshNow(this@LoginActivity)
+            RefreshScheduler.refreshNow(this@LoginActivity, accountId)
             UsageWidget.updateAll(this@LoginActivity)
-            Toast.makeText(this@LoginActivity, "Signed in", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this@LoginActivity, message, Toast.LENGTH_SHORT).show()
             setResult(Activity.RESULT_OK, Intent().putExtra(EXTRA_ACCOUNT_ID, accountId))
             finish()
         }
     }
 
-    override fun onResume() {
-        super.onResume()
-        // WebView requires an explicit onResume() call to resume its renderer/JS timers -- Android
-        // does not do this automatically. Without it, backgrounding this activity (e.g. switching
-        // to another app to read a verification email) and returning can leave the WebView's
-        // rendering surface permanently blank even though the underlying page is still loaded.
-        //
-        // Deliberately NOT calling webView.onPause() in onPause(): that stops JS/timer execution
-        // while backgrounded, and this login flow's code-verification step can involve async JS
-        // work completing shortly after the page navigates -- pausing it here risked the session
-        // cookie never finishing being set. onResume() alone is safe to call even without a prior
-        // pause and is enough to un-stick the rendering surface.
-        if (::webView.isInitialized) webView.onResume()
-    }
-
     override fun onDestroy() {
-        // If login was abandoned before capture, unblock the lock-holding coroutine so the shared
-        // jar lock is released; then cancel the scope.
-        loginDone.complete(Unit)
-        scope.cancel()
-        if (::webView.isInitialized) webView.destroy()
         super.onDestroy()
+        try {
+            serverSocket?.close()
+        } catch (_: Exception) {}
+        scope.cancel()
     }
 
     companion object {
         const val EXTRA_ACCOUNT_ID = "accountId"
+        const val EXTRA_SEED_REFRESH_TOKEN = "seedRefreshToken"
+        const val EXTRA_SEED_ACCESS_TOKEN = "seedAccessToken"
+        const val EXTRA_SEED_PROJECT_ID = "seedProjectId"
+        const val EXTRA_SEED_EMAIL = "seedEmail"
         const val EXTRA_START_URL = "startUrl"
         const val EXTRA_SEED_SESSION_KEY = "seedSessionKey"
         const val EXTRA_SEED_CF_CLEARANCE = "seedCfClearance"
+    }
+}
+
+@Composable
+private fun LoginScreen(
+    isAuthenticating: Boolean,
+    statusMessage: String,
+    onOpenBrowser: () -> Unit,
+    onSubmitCode: (String) -> Unit,
+) {
+    var manualInput by remember { mutableStateOf("") }
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(24.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center,
+    ) {
+        Text("Google Antigravity", style = MaterialTheme.typography.headlineMedium)
+        Spacer(Modifier.height(8.dp))
+        Text(statusMessage, style = MaterialTheme.typography.bodyMedium)
+
+        Spacer(Modifier.height(24.dp))
+
+        if (isAuthenticating) {
+            CircularProgressIndicator()
+        } else {
+            Button(onClick = onOpenBrowser, modifier = Modifier.fillMaxWidth()) {
+                Text("Open Google Sign-In in Browser")
+            }
+
+            Spacer(Modifier.height(32.dp))
+
+            Text("Or paste redirect URL / code:", style = MaterialTheme.typography.labelLarge)
+            Spacer(Modifier.height(8.dp))
+            OutlinedTextField(
+                value = manualInput,
+                onValueChange = { manualInput = it },
+                label = { Text("Code or localhost URL") },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+            )
+            Spacer(Modifier.height(12.dp))
+            OutlinedButton(
+                onClick = { onSubmitCode(manualInput) },
+                enabled = manualInput.isNotBlank(),
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text("Complete Sign-In")
+            }
+        }
     }
 }

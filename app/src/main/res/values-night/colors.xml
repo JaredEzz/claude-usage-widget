@@ -2,6 +2,7 @@
 <resources>
     <color name="accent">#FFE8896B</color>
     <color name="claude_accent">#FFFB8C00</color>
+    <color name="gemini_accent">#FF3B82F6</color>
     <color name="agy_accent">#FF3B82F6</color>
     <color name="bar_track">#33FFFFFF</color>
     <color name="stale">#FFFFC233</color>

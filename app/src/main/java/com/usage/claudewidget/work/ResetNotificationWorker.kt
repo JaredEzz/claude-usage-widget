@@ -44,7 +44,7 @@ class ResetNotificationWorker(context: Context, params: WorkerParameters) :
         val notification = NotificationCompat.Builder(context, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_lobster)
             .setContentTitle("$label usage reset")
-            .setContentText("Your 5-hour Claude usage window is back to 0%.")
+            .setContentText("Your 5-hour Antigravity quota has reset.")
             .setAutoCancel(true)
             .setPriority(NotificationCompat.PRIORITY_DEFAULT)
             .build()

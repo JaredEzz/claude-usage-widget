@@ -39,32 +39,26 @@ data class WidgetState(
     val accountId: String?,
     val needsLogin: Boolean,
     val hasData: Boolean,
-    val fiveHourPct: Int,
-    val fiveHourElapsedPct: Int,
-    val fiveHourResets: String,
-    val sevenDayPct: Int,
-    val sevenDayElapsedPct: Int,
-    val sevenDayResets: String,
-    val scopedLabel: String?,     // e.g. "Fable"; null when the account has no model-scoped limit
-    val scopedPct: Int,
-    val scopedElapsedPct: Int,
-    val scopedResets: String,
-    val hasAgy: Boolean,
-    val agyPct: Int,
-    val agyElapsedPct: Int,
-    val agyResets: String,
-    val agyScopedLabel: String?,
-    val agyScopedPct: Int,
-    val agyScopedElapsedPct: Int,
-    val agyScopedResets: String,
+    val gemini5hPct: Int,
+    val gemini5hElapsedPct: Int,
+    val gemini5hResets: String,
+    val geminiWeeklyPct: Int,
+    val geminiWeeklyElapsedPct: Int,
+    val geminiWeeklyResets: String,
+    val claude5hPct: Int,
+    val claude5hElapsedPct: Int,
+    val claude5hResets: String,
+    val claudeWeeklyPct: Int,
+    val claudeWeeklyElapsedPct: Int,
+    val claudeWeeklyResets: String,
     val stale: Boolean,
 )
 
 private val COMPACT_MAX_WIDTH = 130.dp
 
-// Colors: Claude in Orange, AGY in Blue.
+// Colors: Gemini in Blue, Claude in Orange.
+private val geminiAccent = ColorProvider(R.color.gemini_accent)
 private val claudeAccent = ColorProvider(R.color.claude_accent)
-private val agyAccent = ColorProvider(R.color.agy_accent)
 private fun barTrack() = ColorProvider(R.color.bar_track)
 
 @Composable
@@ -106,9 +100,9 @@ private fun FullLayout(s: WidgetState) {
             Lobster(20.dp)
             Spacer(GlanceModifier.width(6.dp))
             Text(
-                "Claude",
+                "Gemini",
                 style = TextStyle(
-                    color = claudeAccent,
+                    color = geminiAccent,
                     fontWeight = FontWeight.Bold,
                 ),
             )
@@ -120,29 +114,21 @@ private fun FullLayout(s: WidgetState) {
                 ),
             )
             Text(
-                "AGY",
+                "Claude",
                 style = TextStyle(
-                    color = agyAccent,
+                    color = claudeAccent,
                     fontWeight = FontWeight.Bold,
                 ),
             )
         }
         Spacer(GlanceModifier.height(8.dp))
-        MeterRow("Claude 5H", s.fiveHourPct, s.fiveHourElapsedPct, s.fiveHourResets, claudeAccent)
-        Spacer(GlanceModifier.height(6.dp))
-        MeterRow("Claude 1W", s.sevenDayPct, s.sevenDayElapsedPct, s.sevenDayResets, claudeAccent)
-        if (s.scopedLabel != null) {
-            Spacer(GlanceModifier.height(6.dp))
-            MeterRow(s.scopedLabel, s.scopedPct, s.scopedElapsedPct, s.scopedResets, claudeAccent)
-        }
-        if (s.hasAgy) {
-            Spacer(GlanceModifier.height(6.dp))
-            MeterRow("AGY 5H", s.agyPct, s.agyElapsedPct, s.agyResets, agyAccent)
-        }
-        if (s.agyScopedLabel != null) {
-            Spacer(GlanceModifier.height(6.dp))
-            MeterRow(s.agyScopedLabel, s.agyScopedPct, s.agyScopedElapsedPct, s.agyScopedResets, agyAccent)
-        }
+        MeterRow("Gemini 5H", s.gemini5hPct, s.gemini5hElapsedPct, s.gemini5hResets, geminiAccent)
+        Spacer(GlanceModifier.height(5.dp))
+        MeterRow("Gemini 1W", s.geminiWeeklyPct, s.geminiWeeklyElapsedPct, s.geminiWeeklyResets, geminiAccent)
+        Spacer(GlanceModifier.height(5.dp))
+        MeterRow("Claude 5H", s.claude5hPct, s.claude5hElapsedPct, s.claude5hResets, claudeAccent)
+        Spacer(GlanceModifier.height(5.dp))
+        MeterRow("Claude 1W", s.claudeWeeklyPct, s.claudeWeeklyElapsedPct, s.claudeWeeklyResets, claudeAccent)
     }
 }
 
@@ -156,7 +142,7 @@ private fun MeterRow(label: String, pct: Int, elapsedPct: Int, resets: String, c
             Text(
                 label,
                 style = TextStyle(color = GlanceTheme.colors.onSurfaceVariant, fontWeight = FontWeight.Bold),
-                modifier = GlanceModifier.width(72.dp),
+                modifier = GlanceModifier.width(76.dp),
             )
             Text(
                 "$pct%",
@@ -185,13 +171,13 @@ private fun CompactLayout(s: WidgetState) {
     Column(modifier = GlanceModifier.fillMaxSize()) {
         Lobster(16.dp)
         Spacer(GlanceModifier.height(4.dp))
-        CompactMeter("Claude 5H", s.fiveHourPct, s.fiveHourElapsedPct, claudeAccent)
-        Spacer(GlanceModifier.height(4.dp))
-        CompactMeter("Claude 1W", s.sevenDayPct, s.sevenDayElapsedPct, claudeAccent)
-        if (s.hasAgy) {
-            Spacer(GlanceModifier.height(4.dp))
-            CompactMeter("AGY 5H", s.agyPct, s.agyElapsedPct, agyAccent)
-        }
+        CompactMeter("Gemini 5H", s.gemini5hPct, s.gemini5hElapsedPct, geminiAccent)
+        Spacer(GlanceModifier.height(3.dp))
+        CompactMeter("Claude 5H", s.claude5hPct, s.claude5hElapsedPct, claudeAccent)
+        Spacer(GlanceModifier.height(3.dp))
+        CompactMeter("Gemini 1W", s.geminiWeeklyPct, s.geminiWeeklyElapsedPct, geminiAccent)
+        Spacer(GlanceModifier.height(3.dp))
+        CompactMeter("Claude 1W", s.claudeWeeklyPct, s.claudeWeeklyElapsedPct, claudeAccent)
     }
 }
 

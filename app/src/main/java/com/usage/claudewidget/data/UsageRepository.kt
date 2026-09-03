@@ -3,18 +3,19 @@ package com.usage.claudewidget.data
 import android.content.Context
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import okhttp3.MediaType.Companion.toMediaTypeOrNull
+import okhttp3.FormBody
+import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
-import org.json.JSONArray
+import org.json.JSONObject
 import java.util.concurrent.TimeUnit
 
 sealed interface FetchResult {
-    data class Success(val snapshot: UsageSnapshot) : FetchResult
-    /** sessionKey is dead; user must log in again. */
+    data class Success(val snapshot: AntigravitySnapshot) : FetchResult
+    /** Session/token is dead; user must log in again. */
     data object NeedsLogin : FetchResult
-    /** Transient (no network, Cloudflare unresolved, server error). Keep last snapshot. */
+    /** Transient error (no network, rate limit, server error). Keep last snapshot. */
     data class Soft(val reason: String) : FetchResult
 }
 
@@ -23,54 +24,152 @@ class UsageRepository(private val context: Context, private val accountId: Strin
     private val storage = AccountStorage.get(context)
     private val client = OkHttpClient.Builder()
         .callTimeout(20, TimeUnit.SECONDS)
-        .followRedirects(false) // a 302 to /login means the session is dead
         .build()
 
     suspend fun refresh(): FetchResult = withContext(Dispatchers.IO) {
         if (!storage.isLoggedIn(accountId)) return@withContext FetchResult.NeedsLogin
 
-        // Make sure we know which org to query.
-        val org = storage.orgId(accountId) ?: when (val o = discoverOrg()) {
-            null -> return@withContext FetchResult.Soft("org-unknown")
-            else -> o.also { storage.setOrgId(accountId, it) }
+        val token = getValidAccessToken() ?: return@withContext FetchResult.NeedsLogin
+
+        var projectId = storage.projectId(accountId)
+        if (projectId.isNullOrBlank()) {
+            projectId = resolveProjectId(token)
+            if (!projectId.isNullOrBlank()) {
+                storage.setProjectId(accountId, projectId)
+            }
         }
 
-        when (val r = getUsage(org)) {
-            is FetchResult.Soft -> {
-                // Could be an expired cf_clearance: try one silent WebView re-solve.
-                if (r.reason == "cloudflare") {
-                    val resolved = CloudflareResolver.resolve(context, storage, accountId)
-                    if (resolved) getUsage(org) else FetchResult.Soft("cloudflare-unresolved")
-                } else r
-            }
-            else -> r
-        }.also { result ->
-            // The account can be signed out (removeAccount) while this refresh is mid-flight.
-            // Persisting now would resurrect namespaced keys (auth_state:<id>, fh_util:<id>, …)
-            // with no registry entry — orphaned stale credentials on disk. Skip if it's gone.
-            if (storage.accountExists(accountId)) {
-                storage.setAuthState(
-                    accountId,
-                    if (result is FetchResult.NeedsLogin) AuthState.NEEDS_LOGIN else AuthState.OK,
-                )
-                if (result is FetchResult.Success) storage.saveSnapshot(accountId, result.snapshot)
+        val result = fetchQuotaSummary(token, projectId)
+
+        if (storage.accountExists(accountId)) {
+            storage.setAuthState(
+                accountId,
+                if (result is FetchResult.NeedsLogin) AuthState.NEEDS_LOGIN else AuthState.OK,
+            )
+            if (result is FetchResult.Success) {
+                storage.saveSnapshot(accountId, result.snapshot)
             }
         }
+        result
     }
 
-    private fun getUsage(org: String): FetchResult {
-        val req = buildRequest(Const.usageUrl(org)) ?: return FetchResult.NeedsLogin
-        val (agyQuota, agyScoped) = getAgyUsage()
+    private fun getValidAccessToken(): String? {
+        val currentToken = storage.accessToken(accountId)
+        val expiresAt = storage.tokenExpiresAt(accountId)
+        val now = System.currentTimeMillis()
+
+        // Reuse existing token if valid for at least another 60 seconds
+        if (!currentToken.isNullOrBlank() && expiresAt > now + 60_000L) {
+            return currentToken
+        }
+
+        val refreshToken = storage.refreshToken(accountId) ?: return null
+        return refreshAccessToken(refreshToken)
+    }
+
+    private fun refreshAccessToken(refreshToken: String): String? {
+        val form = FormBody.Builder()
+            .add("client_id", Const.GOOGLE_CLIENT_ID)
+            .add("client_secret", Const.GOOGLE_CLIENT_SECRET)
+            .add("refresh_token", refreshToken)
+            .add("grant_type", "refresh_token")
+            .build()
+
+        val req = Request.Builder()
+            .url(Const.GOOGLE_TOKEN_URL)
+            .post(form)
+            .build()
+
         return try {
             client.newCall(req).execute().use { resp ->
                 val body = resp.body?.string().orEmpty()
-                when {
-                    resp.code == 200 -> FetchResult.Success(
-                        UsageSnapshot.parseClaude(body, System.currentTimeMillis(), agyQuota, agyScoped)
-                    )
-                    resp.code == 401 || resp.isRedirect -> FetchResult.NeedsLogin
-                    resp.code == 403 || resp.code == 503 || body.contains("Just a moment") ->
-                        FetchResult.Soft("cloudflare")
+                if (resp.code == 200) {
+                    val json = JSONObject(body)
+                    val newAccessToken = json.optString("access_token")
+                    val expiresInSec = json.optLong("expires_in", 3600L)
+                    if (newAccessToken.isNotBlank()) {
+                        storage.setAccessToken(accountId, newAccessToken)
+                        storage.setTokenExpiresAt(accountId, System.currentTimeMillis() + expiresInSec * 1000L)
+                        newAccessToken
+                    } else null
+                } else {
+                    null
+                }
+            }
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    private fun resolveProjectId(accessToken: String): String? {
+        val metadata = JSONObject().apply {
+            put("ideType", "ANTIGRAVITY")
+            put("platform", "PLATFORM_UNSPECIFIED")
+            put("pluginType", "GEMINI")
+        }
+        val bodyJson = JSONObject().apply {
+            put("metadata", metadata)
+        }
+
+        val req = Request.Builder()
+            .url(Const.LOAD_CODE_ASSIST_URL)
+            .header("Authorization", "Bearer $accessToken")
+            .header("User-Agent", Const.USER_AGENT)
+            .header("Content-Type", "application/json")
+            .post(bodyJson.toString().toRequestBody("application/json".toMediaType()))
+            .build()
+
+        return try {
+            client.newCall(req).execute().use { resp ->
+                if (resp.code == 200) {
+                    val json = JSONObject(resp.body?.string().orEmpty())
+                    val companion = json.opt("cloudaicompanionProject")
+                    when (companion) {
+                        is String -> companion.takeIf { it.isNotBlank() }
+                        is JSONObject -> companion.optString("id").takeIf { it.isNotBlank() }
+                        else -> null
+                    }
+                } else null
+            }
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    private fun fetchQuotaSummary(accessToken: String, projectId: String?): FetchResult {
+        val bodyJson = JSONObject().apply {
+            if (!projectId.isNullOrBlank()) {
+                put("project", projectId)
+            }
+        }
+
+        val req = Request.Builder()
+            .url(Const.QUOTA_SUMMARY_URL)
+            .header("Authorization", "Bearer $accessToken")
+            .header("User-Agent", Const.USER_AGENT)
+            .header("Content-Type", "application/json")
+            .post(bodyJson.toString().toRequestBody("application/json".toMediaType()))
+            .build()
+
+        return try {
+            client.newCall(req).execute().use { resp ->
+                val body = resp.body?.string().orEmpty()
+                when (resp.code) {
+                    200 -> {
+                        val snapshot = AntigravitySnapshot.parseQuotaSummary(body, System.currentTimeMillis())
+                        FetchResult.Success(snapshot)
+                    }
+                    401, 403 -> {
+                        // Attempt one force-refresh of token
+                        val refreshToken = storage.refreshToken(accountId)
+                        val refreshed = if (refreshToken != null) refreshAccessToken(refreshToken) else null
+                        if (refreshed != null) {
+                            fetchQuotaSummaryRetry(refreshed, projectId)
+                        } else {
+                            FetchResult.NeedsLogin
+                        }
+                    }
+                    429 -> FetchResult.Soft("rate-limit")
                     else -> FetchResult.Soft("http-${resp.code}")
                 }
             }
@@ -79,79 +178,32 @@ class UsageRepository(private val context: Context, private val accountId: Strin
         }
     }
 
-    private fun getAgyUsage(): Pair<Window?, ScopedWindow?> {
-        val token = storage.agyToken(accountId)
-        if (!token.isNullOrBlank()) {
-            try {
-                val req = Request.Builder()
-                    .url("https://cloudcode-pa.googleapis.com/v1internal:fetchAvailableModels")
-                    .header("Authorization", "Bearer $token")
-                    .header("Accept", "application/json")
-                    .post("{}".toRequestBody("application/json; charset=utf-8".toMediaTypeOrNull()))
-                    .build()
-                client.newCall(req).execute().use { resp ->
-                    if (resp.code == 200) {
-                        val body = resp.body?.string().orEmpty()
-                        val res = UsageSnapshot.parseAgy(body, System.currentTimeMillis())
-                        if (res.first != null) return res
-                    }
-                }
-            } catch (_: Exception) {}
+    private fun fetchQuotaSummaryRetry(accessToken: String, projectId: String?): FetchResult {
+        val bodyJson = JSONObject().apply {
+            if (!projectId.isNullOrBlank()) {
+                put("project", projectId)
+            }
         }
-        // Fallback / default AGY window (e.g. 34.5% utilized, resets in ~4h 22m)
-        val reset = System.currentTimeMillis() + (4 * 3600 + 22 * 60) * 1000L
-        val mainWin = Window(utilization = 34.5f, resetsAtEpochMs = reset)
-        val scopedWin = ScopedWindow("Gemini 3.6", Window(utilization = 18.0f, resetsAtEpochMs = reset))
-        return Pair(mainWin, scopedWin)
-    }
-
-    private fun discoverOrg(): String? {
-        val req = buildRequest(Const.ORGS_URL) ?: return null
+        val req = Request.Builder()
+            .url(Const.QUOTA_SUMMARY_URL)
+            .header("Authorization", "Bearer $accessToken")
+            .header("User-Agent", Const.USER_AGENT)
+            .header("Content-Type", "application/json")
+            .post(bodyJson.toString().toRequestBody("application/json".toMediaType()))
+            .build()
         return try {
             client.newCall(req).execute().use { resp ->
-                if (resp.code != 200) return null
-                val arr = JSONArray(resp.body?.string().orEmpty())
-                if (arr.length() == 0) return null
-                // Single-org accounts: take [0]. Multi-org: prefer one with a chat capability.
-                for (i in 0 until arr.length()) {
-                    val o = arr.getJSONObject(i)
-                    val caps = o.optJSONArray("capabilities")
-                    val isChat = caps != null && (0 until caps.length()).any {
-                        caps.optString(it).contains("chat", true) ||
-                            caps.optString(it).contains("claude_ai", true)
-                    }
-                    if (isChat) return o.optString("uuid").ifBlank { o.optString("id") }.also {
-                        labelFromOrg(o)
-                    }
-                }
-                arr.getJSONObject(0).let {
-                    labelFromOrg(it)
-                    it.optString("uuid").ifBlank { it.optString("id") }
+                if (resp.code == 200) {
+                    val snapshot = AntigravitySnapshot.parseQuotaSummary(resp.body?.string().orEmpty(), System.currentTimeMillis())
+                    FetchResult.Success(snapshot)
+                } else if (resp.code == 401 || resp.code == 403) {
+                    FetchResult.NeedsLogin
+                } else {
+                    FetchResult.Soft("http-${resp.code}")
                 }
             }
-        } catch (_: Exception) {
-            null
+        } catch (e: Exception) {
+            FetchResult.Soft(e.message ?: "io")
         }
-    }
-
-    /** Replace the default "Account N" label with the org's real display name, once known. */
-    private fun labelFromOrg(o: org.json.JSONObject) {
-        val name = o.optString("name")
-        if (name.isNotBlank()) storage.setLabel(accountId, name)
-    }
-
-    private fun buildRequest(url: String): Request? {
-        val session = storage.sessionKey(accountId) ?: return null
-        val cf = storage.cfClearance(accountId)
-        val cookie = buildString {
-            append("${Const.COOKIE_SESSION}=$session")
-            if (!cf.isNullOrBlank()) append("; ${Const.COOKIE_CF}=$cf")
-        }
-        val builder = Request.Builder()
-            .url(url)
-            .header("Accept", "*/*")
-            .header("Cookie", cookie)
-        storage.userAgent(accountId)?.let { builder.header("User-Agent", it) }
-        return builder.get().build()
     }
 }

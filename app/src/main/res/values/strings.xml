@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">Usage</string>
-    <string name="sign_in">Sign in to Claude</string>
-    <string name="widget_description">Claude &amp; Antigravity usage on your home screen</string>
+    <string name="app_name">Antigravity Usage</string>
+    <string name="sign_in">Sign in with Google</string>
+    <string name="widget_description">Antigravity usage (Gemini &amp; Claude) on your home screen</string>
 </resources>
