@@ -43,6 +43,7 @@ import com.usage.claudewidget.auth.LoginActivity
 import com.usage.claudewidget.data.Account
 import com.usage.claudewidget.data.AccountStorage
 import com.usage.claudewidget.widget.UsageWidget
+import com.usage.claudewidget.work.RefreshScheduler
 import com.usage.claudewidget.work.ResetNotificationWorker
 import kotlinx.coroutines.launch
 
