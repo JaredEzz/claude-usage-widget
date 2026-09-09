@@ -9,13 +9,10 @@ import androidx.work.NetworkType
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
-import androidx.work.workDataOf
 import com.usage.claudewidget.data.Const
 import java.util.concurrent.TimeUnit
 
 object RefreshScheduler {
-
-    const val KEY_ACCOUNT_ID = "accountId"
 
     private val networkConstraint =
         Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build()
@@ -34,20 +31,13 @@ object RefreshScheduler {
         )
     }
 
-    /**
-     * Manual refresh: run once now, ahead of the periodic schedule.
-     * Pass [accountId] to refresh only that account; omit to refresh every bound account.
-     */
-    fun refreshNow(context: Context, accountId: String? = null) {
-        val builder = OneTimeWorkRequestBuilder<RefreshWorker>()
+    /** Manual refresh: run once now, ahead of the periodic schedule. */
+    fun refreshNow(context: Context) {
+        val work = OneTimeWorkRequestBuilder<RefreshWorker>()
             .setConstraints(networkConstraint)
-        if (accountId != null) {
-            builder.setInputData(workDataOf(KEY_ACCOUNT_ID to accountId))
-        }
-        val uniqueName =
-            if (accountId != null) "${Const.WORK_NAME}-now-$accountId" else "${Const.WORK_NAME}-now"
+            .build()
         WorkManager.getInstance(context).enqueueUniqueWork(
-            uniqueName, ExistingWorkPolicy.REPLACE, builder.build()
+            "${Const.WORK_NAME}-now", ExistingWorkPolicy.REPLACE, work
         )
     }
 }

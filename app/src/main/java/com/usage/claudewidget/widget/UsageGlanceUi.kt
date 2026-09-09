@@ -2,10 +2,10 @@ package com.usage.claudewidget.widget
 
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.glance.GlanceModifier
 import androidx.glance.GlanceTheme
-import androidx.glance.Image
-import androidx.glance.ImageProvider
+import androidx.glance.LocalContext
 import androidx.glance.LocalSize
 import androidx.glance.action.clickable
 import androidx.glance.appwidget.action.actionRunCallback
@@ -28,37 +28,32 @@ import androidx.glance.text.FontWeight
 import androidx.glance.text.Text
 import androidx.glance.text.TextStyle
 import androidx.glance.unit.ColorProvider
-import androidx.glance.LocalContext
 import android.content.Intent
+import android.graphics.Color as AndroidColor
 import com.usage.claudewidget.R
-import com.usage.claudewidget.auth.LoginActivity
 import com.usage.claudewidget.ui.MainActivity
 
-/** Immutable view state handed to the composable; assembled from AccountStorage on each render. */
+/** One usage meter row as shown on the opencode.ai Go dashboard. */
+data class Meter(
+    val pct: Int,
+    val resets: String,
+)
+
+/** Immutable view state handed to the composable; assembled from UsageStore on each render. */
 data class WidgetState(
-    val accountId: String?,
-    val needsLogin: Boolean,
+    val hasKey: Boolean,
+    val keyRejected: Boolean,
     val hasData: Boolean,
-    val gemini5hPct: Int,
-    val gemini5hElapsedPct: Int,
-    val gemini5hResets: String,
-    val geminiWeeklyPct: Int,
-    val geminiWeeklyElapsedPct: Int,
-    val geminiWeeklyResets: String,
-    val claude5hPct: Int,
-    val claude5hElapsedPct: Int,
-    val claude5hResets: String,
-    val claudeWeeklyPct: Int,
-    val claudeWeeklyElapsedPct: Int,
-    val claudeWeeklyResets: String,
     val stale: Boolean,
+    val fiveHour: Meter,
+    val weekly: Meter,
+    val monthly: Meter,
 )
 
 private val COMPACT_MAX_WIDTH = 130.dp
 
-// Colors: Gemini in Blue, Claude in Orange.
-private val geminiAccent = ColorProvider(R.color.gemini_accent)
-private val claudeAccent = ColorProvider(R.color.claude_accent)
+// The dashboard's blue progress bars.
+private val goBlue = ColorProvider(R.color.go_accent)
 private fun barTrack() = ColorProvider(R.color.bar_track)
 
 @Composable
@@ -67,10 +62,8 @@ fun UsageWidgetContent(state: WidgetState) {
     val compact = size.width < COMPACT_MAX_WIDTH
     val context = LocalContext.current
 
-    val tap = if (state.needsLogin) {
-        val intent = Intent(context, MainActivity::class.java)
-        state.accountId?.let { intent.putExtra(LoginActivity.EXTRA_ACCOUNT_ID, it) }
-        actionStartActivity(intent)
+    val tap = if (!state.hasKey || state.keyRejected) {
+        actionStartActivity(Intent(context, MainActivity::class.java))
     } else {
         actionRunCallback<RefreshAction>()
     }
@@ -84,8 +77,9 @@ fun UsageWidgetContent(state: WidgetState) {
             .clickable(tap),
     ) {
         when {
-            state.needsLogin -> SignInPrompt(compact)
-            !state.hasData -> Loading(compact)
+            !state.hasKey -> KeyPrompt(compact, "Tap to add API key")
+            state.keyRejected -> KeyPrompt(compact, "Key rejected — tap to fix")
+            !state.hasData -> Loading()
             compact -> CompactLayout(state)
             else -> FullLayout(state)
         }
@@ -93,47 +87,33 @@ fun UsageWidgetContent(state: WidgetState) {
     }
 }
 
+/** Dashboard-style layout: label + pct, blue bar, "Resets in ..." underneath. */
 @Composable
 private fun FullLayout(s: WidgetState) {
     Column(modifier = GlanceModifier.fillMaxSize()) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Lobster(20.dp)
+            GoLogo(13.sp)
             Spacer(GlanceModifier.width(6.dp))
             Text(
-                "Gemini",
+                "OpenCode Go",
                 style = TextStyle(
-                    color = geminiAccent,
+                    color = GlanceTheme.colors.onSurface,
                     fontWeight = FontWeight.Bold,
-                ),
-            )
-            Text(
-                " & ",
-                style = TextStyle(
-                    color = GlanceTheme.colors.onSurfaceVariant,
-                    fontWeight = FontWeight.Medium,
-                ),
-            )
-            Text(
-                "Claude",
-                style = TextStyle(
-                    color = claudeAccent,
-                    fontWeight = FontWeight.Bold,
+                    fontSize = 13.sp,
                 ),
             )
         }
         Spacer(GlanceModifier.height(8.dp))
-        MeterRow("Gemini 5H", s.gemini5hPct, s.gemini5hElapsedPct, s.gemini5hResets, geminiAccent)
-        Spacer(GlanceModifier.height(5.dp))
-        MeterRow("Gemini 1W", s.geminiWeeklyPct, s.geminiWeeklyElapsedPct, s.geminiWeeklyResets, geminiAccent)
-        Spacer(GlanceModifier.height(5.dp))
-        MeterRow("Claude 5H", s.claude5hPct, s.claude5hElapsedPct, s.claude5hResets, claudeAccent)
-        Spacer(GlanceModifier.height(5.dp))
-        MeterRow("Claude 1W", s.claudeWeeklyPct, s.claudeWeeklyElapsedPct, s.claudeWeeklyResets, claudeAccent)
+        DashboardMeter("5-hour Usage", s.fiveHour)
+        Spacer(GlanceModifier.height(7.dp))
+        DashboardMeter("Weekly Usage", s.weekly)
+        Spacer(GlanceModifier.height(7.dp))
+        DashboardMeter("Monthly Usage", s.monthly)
     }
 }
 
 @Composable
-private fun MeterRow(label: String, pct: Int, elapsedPct: Int, resets: String, color: ColorProvider) {
+private fun DashboardMeter(label: String, m: Meter) {
     Column(modifier = GlanceModifier.fillMaxWidth()) {
         Row(
             modifier = GlanceModifier.fillMaxWidth(),
@@ -141,105 +121,125 @@ private fun MeterRow(label: String, pct: Int, elapsedPct: Int, resets: String, c
         ) {
             Text(
                 label,
-                style = TextStyle(color = GlanceTheme.colors.onSurfaceVariant, fontWeight = FontWeight.Bold),
-                modifier = GlanceModifier.width(76.dp),
-            )
-            Text(
-                "$pct%",
                 style = TextStyle(
-                    color = if (pct > elapsedPct) ColorProvider(R.color.stale) else GlanceTheme.colors.onSurface,
+                    color = GlanceTheme.colors.onSurface,
                     fontWeight = FontWeight.Bold,
+                    fontSize = 12.sp,
                 ),
-            )
-            Text(
-                " / $elapsedPct%",
-                style = TextStyle(color = GlanceTheme.colors.onSurfaceVariant, fontWeight = FontWeight.Medium),
             )
             Spacer(GlanceModifier.defaultWeight())
             Text(
-                resets,
-                style = TextStyle(color = GlanceTheme.colors.onSurfaceVariant),
+                "${m.pct}%",
+                style = TextStyle(
+                    color = GlanceTheme.colors.onSurfaceVariant,
+                    fontWeight = FontWeight.Medium,
+                    fontSize = 12.sp,
+                ),
             )
         }
         Spacer(GlanceModifier.height(3.dp))
-        Bar(pct, color)
+        Bar(m.pct)
+        Spacer(GlanceModifier.height(2.dp))
+        Text(
+            if (m.resets == "now") "Resetting now" else "Resets in ${m.resets}",
+            style = TextStyle(
+                color = GlanceTheme.colors.onSurfaceVariant,
+                fontSize = 10.sp,
+            ),
+        )
     }
 }
 
+/** Small sizes: logo + three tight label/pct/bar rows. */
 @Composable
 private fun CompactLayout(s: WidgetState) {
     Column(modifier = GlanceModifier.fillMaxSize()) {
-        Lobster(16.dp)
+        GoLogo(10.sp)
         Spacer(GlanceModifier.height(4.dp))
-        CompactMeter("Gemini 5H", s.gemini5hPct, s.gemini5hElapsedPct, geminiAccent)
+        CompactMeter("5H", s.fiveHour.pct)
         Spacer(GlanceModifier.height(3.dp))
-        CompactMeter("Claude 5H", s.claude5hPct, s.claude5hElapsedPct, claudeAccent)
+        CompactMeter("1W", s.weekly.pct)
         Spacer(GlanceModifier.height(3.dp))
-        CompactMeter("Gemini 1W", s.geminiWeeklyPct, s.geminiWeeklyElapsedPct, geminiAccent)
-        Spacer(GlanceModifier.height(3.dp))
-        CompactMeter("Claude 1W", s.claudeWeeklyPct, s.claudeWeeklyElapsedPct, claudeAccent)
+        CompactMeter("30D", s.monthly.pct)
     }
 }
 
 @Composable
-private fun CompactMeter(label: String, pct: Int, elapsedPct: Int, color: ColorProvider) {
+private fun CompactMeter(label: String, pct: Int) {
     Column(modifier = GlanceModifier.fillMaxWidth()) {
         Row(modifier = GlanceModifier.fillMaxWidth()) {
             Text(
                 label,
-                style = TextStyle(color = GlanceTheme.colors.onSurfaceVariant, fontWeight = FontWeight.Bold),
+                style = TextStyle(
+                    color = GlanceTheme.colors.onSurfaceVariant,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 10.sp,
+                ),
             )
             Spacer(GlanceModifier.defaultWeight())
             Text(
-                "$pct%/$elapsedPct%",
+                "$pct%",
                 style = TextStyle(
-                    color = if (pct > elapsedPct) ColorProvider(R.color.stale) else GlanceTheme.colors.onSurface,
+                    color = GlanceTheme.colors.onSurface,
                     fontWeight = FontWeight.Bold,
+                    fontSize = 10.sp,
                 ),
             )
         }
         Spacer(GlanceModifier.height(2.dp))
-        Bar(pct, color)
+        Bar(pct)
     }
 }
 
 @Composable
-private fun Bar(pct: Int, color: ColorProvider) {
+private fun Bar(pct: Int) {
     LinearProgressIndicator(
         progress = (pct.coerceIn(0, 100)) / 100f,
-        modifier = GlanceModifier.fillMaxWidth().height(6.dp).cornerRadius(3.dp),
-        color = color,
+        modifier = GlanceModifier.fillMaxWidth().height(5.dp).cornerRadius(2.dp),
+        color = goBlue,
         backgroundColor = barTrack(),
     )
 }
 
+/** White "GO" badge on a dark tile, like the dashboard logo. */
 @Composable
-private fun Lobster(s: androidx.compose.ui.unit.Dp) {
-    Image(
-        provider = ImageProvider(R.drawable.ic_lobster),
-        contentDescription = "Claude & AGY",
-        modifier = GlanceModifier.size(s),
-    )
+private fun GoLogo(textSize: androidx.compose.ui.unit.TextUnit) {
+    Box(
+        modifier = GlanceModifier
+            .background(ColorProvider(AndroidColor.WHITE))
+            .cornerRadius(3.dp)
+            .padding(horizontal = 5.dp, vertical = 1.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            "GO",
+            style = TextStyle(
+                color = ColorProvider(AndroidColor.BLACK),
+                fontWeight = FontWeight.Bold,
+                fontSize = textSize,
+            ),
+        )
+    }
 }
 
 @Composable
-private fun SignInPrompt(compact: Boolean) {
+private fun KeyPrompt(compact: Boolean, message: String) {
     Column(
         modifier = GlanceModifier.fillMaxSize(),
         verticalAlignment = Alignment.CenterVertically,
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Lobster(if (compact) 18.dp else 24.dp)
+        GoLogo(if (compact) 12.sp else 16.sp)
         Spacer(GlanceModifier.height(6.dp))
         Text(
-            if (compact) "Sign in" else "Tap to sign in",
+            message,
             style = TextStyle(color = GlanceTheme.colors.onSurface, fontWeight = FontWeight.Medium),
         )
     }
 }
 
 @Composable
-private fun Loading(compact: Boolean) {
+private fun Loading() {
     Column(
         modifier = GlanceModifier.fillMaxSize(),
         verticalAlignment = Alignment.CenterVertically,
@@ -263,4 +263,3 @@ private fun StaleDot() {
         ) {}
     }
 }
-

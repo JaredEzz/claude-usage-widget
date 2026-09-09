@@ -22,10 +22,10 @@ android {
     compileSdk = 36
 
     defaultConfig {
-        applicationId = "com.usage.claudewidget"
+        applicationId = "com.usage.opencodewidget"
         minSdk = 26
         targetSdk = 36
-        versionCode = 3
+        versionCode = 1
         versionName = "1.0"
     }
 
