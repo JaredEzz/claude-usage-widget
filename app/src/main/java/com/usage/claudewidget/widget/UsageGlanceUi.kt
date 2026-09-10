@@ -29,7 +29,6 @@ import androidx.glance.text.Text
 import androidx.glance.text.TextStyle
 import androidx.glance.unit.ColorProvider
 import android.content.Intent
-import android.graphics.Color as AndroidColor
 import com.usage.claudewidget.R
 import com.usage.claudewidget.ui.MainActivity
 
@@ -233,7 +232,7 @@ private fun Bar(pct: Float) {
 private fun GoLogo(textSize: androidx.compose.ui.unit.TextUnit) {
     Box(
         modifier = GlanceModifier
-            .background(ColorProvider(AndroidColor.WHITE))
+            .background(ColorProvider(R.color.go_logo_bg))
             .cornerRadius(3.dp)
             .padding(horizontal = 5.dp, vertical = 1.dp),
         contentAlignment = Alignment.Center,
@@ -241,7 +240,7 @@ private fun GoLogo(textSize: androidx.compose.ui.unit.TextUnit) {
         Text(
             "GO",
             style = TextStyle(
-                color = ColorProvider(AndroidColor.BLACK),
+                color = ColorProvider(R.color.go_logo_fg),
                 fontWeight = FontWeight.Bold,
                 fontSize = textSize,
             ),

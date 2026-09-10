@@ -3,4 +3,9 @@
     <color name="go_accent">#FF3B82F6</color>
     <color name="bar_track">#22000000</color>
     <color name="stale">#FFE0A000</color>
+    <!-- GO badge: white tile, black text (plain colors, NOT framework ints: passing
+         android.graphics.Color.WHITE to ColorProvider() binds the @ColorRes overload
+         and crashes translation with Resources$NotFoundException #0xffffffff). -->
+    <color name="go_logo_bg">#FFFFFFFF</color>
+    <color name="go_logo_fg">#FF000000</color>
 </resources>

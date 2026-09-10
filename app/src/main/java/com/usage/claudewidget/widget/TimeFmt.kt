@@ -23,7 +23,7 @@ object TimeFmt {
         return if (p < 10f) {
             // One decimal, trimming ".0" so 5% doesn't read "5.0%".
             val tenths = (p * 10).toInt() / 10f
-            if (tenths == tenths.toInt().toFloat()) "${tenths.toInt()}%" else "${"%.1f".format(tenths)}%"
+            if (tenths == tenths.toInt().toFloat()) "${tenths.toInt()}%" else String.format(java.util.Locale.US, "%.1f%%", tenths)
         } else {
             "${p.toInt()}%"
         }
