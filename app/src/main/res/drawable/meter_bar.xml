@@ -13,4 +13,5 @@
                 <solid android:color="#FF3B82F6" />
             </shape>
         </clip>
-    </layer-list>
+    </item>
+</layer-list>
