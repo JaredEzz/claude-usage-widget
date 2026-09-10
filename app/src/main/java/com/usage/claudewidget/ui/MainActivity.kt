@@ -16,12 +16,14 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Button
 import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -30,7 +32,12 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.Font
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.usage.claudewidget.R
 import com.usage.claudewidget.data.AuthState
 import com.usage.claudewidget.data.FetchResult
 import com.usage.claudewidget.data.UsageRepository
@@ -50,8 +57,12 @@ class MainActivity : ComponentActivity() {
         val injectedKey = intent?.getStringExtra(EXTRA_API_KEY)
         setContent {
             MaterialTheme {
-                Surface(modifier = Modifier.fillMaxSize()) {
-                    SetupScreen(injectedKey = injectedKey)
+                CompositionLocalProvider(
+                    LocalTextStyle provides TextStyle(fontFamily = plexMono())
+                ) {
+                    Surface(modifier = Modifier.fillMaxSize()) {
+                        SetupScreen(injectedKey = injectedKey)
+                    }
                 }
             }
         }
@@ -61,6 +72,13 @@ class MainActivity : ComponentActivity() {
         const val EXTRA_API_KEY = "api_key"
     }
 }
+
+private fun plexMono() = FontFamily(
+    Font(R.font.ibm_plex_mono_regular, FontWeight.Normal),
+    Font(R.font.ibm_plex_mono_medium, FontWeight.Medium),
+    Font(R.font.ibm_plex_mono_semibold, FontWeight.SemiBold),
+    Font(R.font.ibm_plex_mono_bold, FontWeight.Bold),
+)
 
 @Composable
 private fun SetupScreen(injectedKey: String?) {

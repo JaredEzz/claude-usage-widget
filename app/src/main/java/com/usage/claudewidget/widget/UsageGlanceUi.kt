@@ -1,25 +1,27 @@
 package com.usage.claudewidget.widget
 
+import android.content.Context
+import android.content.Intent
+import android.widget.RemoteViews
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.glance.GlanceModifier
 import androidx.glance.GlanceTheme
+import androidx.glance.Image
+import androidx.glance.ImageProvider
 import androidx.glance.LocalContext
 import androidx.glance.LocalSize
 import androidx.glance.action.clickable
+import androidx.glance.appwidget.AndroidRemoteViews
 import androidx.glance.appwidget.action.actionRunCallback
 import androidx.glance.appwidget.action.actionStartActivity
-import androidx.glance.appwidget.LinearProgressIndicator
 import androidx.glance.appwidget.cornerRadius
 import androidx.glance.background
 import androidx.glance.layout.Alignment
 import androidx.glance.layout.Box
 import androidx.glance.layout.Column
-import androidx.glance.layout.Row
 import androidx.glance.layout.Spacer
 import androidx.glance.layout.fillMaxSize
-import androidx.glance.layout.fillMaxWidth
 import androidx.glance.layout.height
 import androidx.glance.layout.padding
 import androidx.glance.layout.size
@@ -28,9 +30,9 @@ import androidx.glance.text.FontWeight
 import androidx.glance.text.Text
 import androidx.glance.text.TextStyle
 import androidx.glance.unit.ColorProvider
-import android.content.Intent
 import com.usage.claudewidget.R
 import com.usage.claudewidget.ui.MainActivity
+import kotlin.math.roundToInt
 
 /** One usage meter row as shown on the opencode.ai Go dashboard. */
 data class Meter(
@@ -74,10 +76,6 @@ data class WidgetState(
 
 private val COMPACT_MAX_WIDTH = 130.dp
 
-// The dashboard's blue progress bars.
-private val goBlue = ColorProvider(R.color.go_accent)
-private fun barTrack() = ColorProvider(R.color.bar_track)
-
 @Composable
 fun UsageWidgetContent(state: WidgetState) {
     val size = LocalSize.current
@@ -95,12 +93,12 @@ fun UsageWidgetContent(state: WidgetState) {
             .fillMaxSize()
             .background(GlanceTheme.colors.widgetBackground)
             .cornerRadius(20.dp)
-            .padding(if (compact) 8.dp else 12.dp)
+            .padding(if (compact) 8.dp else 10.dp)
             .clickable(tap),
     ) {
         when {
-            !state.hasKey -> KeyPrompt(compact, "Tap to add API key")
-            state.keyRejected -> KeyPrompt(compact, "Key rejected — tap to fix")
+            !state.hasKey -> KeyPrompt("Tap to add API key")
+            state.keyRejected -> KeyPrompt("Key rejected — tap to fix")
             !state.hasData -> Loading()
             compact -> CompactLayout(state)
             else -> FullLayout(state)
@@ -109,153 +107,79 @@ fun UsageWidgetContent(state: WidgetState) {
     }
 }
 
-/** Dashboard-style layout: label + pct, blue bar, "Resets in ..." underneath. */
+/**
+ * Dashboard meters rendered from an XML layout so text uses IBM Plex Mono
+ * (Glance Text only supports system font families via TypefaceSpan).
+ */
 @Composable
 private fun FullLayout(s: WidgetState) {
-    Column(modifier = GlanceModifier.fillMaxSize()) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            GoLogo(13.sp)
-            Spacer(GlanceModifier.width(6.dp))
-            Text(
-                "OpenCode Go",
-                style = TextStyle(
-                    color = GlanceTheme.colors.onSurface,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 13.sp,
-                ),
-            )
-        }
-        Spacer(GlanceModifier.height(8.dp))
-        DashboardMeter("5-hour Usage", s.fiveHour)
-        Spacer(GlanceModifier.height(7.dp))
-        DashboardMeter("Weekly Usage", s.weekly)
-        Spacer(GlanceModifier.height(7.dp))
-        DashboardMeter("Monthly Usage", s.monthly)
-    }
+    val context = LocalContext.current
+    AndroidRemoteViews(buildFullViews(context, s), modifier = GlanceModifier.fillMaxSize())
 }
 
-@Composable
-private fun DashboardMeter(label: String, m: Meter) {
-    Column(modifier = GlanceModifier.fillMaxWidth()) {
-        Row(
-            modifier = GlanceModifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(
-                label,
-                style = TextStyle(
-                    color = GlanceTheme.colors.onSurface,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 12.sp,
-                ),
-            )
-            Spacer(GlanceModifier.defaultWeight())
-            Text(
-                m.pctText,
-                style = TextStyle(
-                    color = GlanceTheme.colors.onSurfaceVariant,
-                    fontWeight = FontWeight.Medium,
-                    fontSize = 12.sp,
-                ),
-            )
-        }
-        Spacer(GlanceModifier.height(3.dp))
-        Bar(m.pct)
-        Spacer(GlanceModifier.height(2.dp))
-        Text(
-            when (m.resets) {
-                "-" -> "Reset time unknown"
-                "now" -> "Resetting now"
-                else -> "Resets in ${m.resets}"
-            },
-            style = TextStyle(
-                color = GlanceTheme.colors.onSurfaceVariant,
-                fontSize = 10.sp,
-            ),
-        )
-    }
+private fun buildFullViews(context: Context, s: WidgetState): RemoteViews {
+    val rv = RemoteViews(context.packageName, R.layout.widget_full)
+    bindMeter(rv, R.id.m1_pct, R.id.m1_bar, R.id.m1_resets, s.fiveHour)
+    bindMeter(rv, R.id.m2_pct, R.id.m2_bar, R.id.m2_resets, s.weekly)
+    bindMeter(rv, R.id.m3_pct, R.id.m3_bar, R.id.m3_resets, s.monthly)
+    return rv
 }
 
-/** Small sizes: logo + three tight label/pct/bar rows. */
-@Composable
-private fun CompactLayout(s: WidgetState) {
-    Column(modifier = GlanceModifier.fillMaxSize()) {
-        GoLogo(10.sp)
-        Spacer(GlanceModifier.height(4.dp))
-        CompactMeter("5H", s.fiveHour)
-        Spacer(GlanceModifier.height(3.dp))
-        CompactMeter("1W", s.weekly)
-        Spacer(GlanceModifier.height(3.dp))
-        CompactMeter("30D", s.monthly)
-    }
-}
-
-@Composable
-private fun CompactMeter(label: String, m: Meter) {
-    Column(modifier = GlanceModifier.fillMaxWidth()) {
-        Row(modifier = GlanceModifier.fillMaxWidth()) {
-            Text(
-                label,
-                style = TextStyle(
-                    color = GlanceTheme.colors.onSurfaceVariant,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 10.sp,
-                ),
-            )
-            Spacer(GlanceModifier.defaultWeight())
-            Text(
-                m.pctText,
-                style = TextStyle(
-                    color = GlanceTheme.colors.onSurface,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 10.sp,
-                ),
-            )
-        }
-        Spacer(GlanceModifier.height(2.dp))
-        Bar(m.pct)
-    }
-}
-
-@Composable
-private fun Bar(pct: Float) {
-    LinearProgressIndicator(
-        progress = (pct.coerceIn(0f, 100f)) / 100f,
-        modifier = GlanceModifier.fillMaxWidth().height(5.dp).cornerRadius(2.dp),
-        color = goBlue,
-        backgroundColor = barTrack(),
+private fun bindMeter(rv: RemoteViews, pctId: Int, barId: Int, resetsId: Int, m: Meter) {
+    rv.setTextViewText(pctId, m.pctText)
+    rv.setProgressBar(barId, 1000, (m.pct * 10).roundToInt().coerceIn(0, 1000), false)
+    rv.setTextViewText(
+        resetsId,
+        when (m.resets) {
+            "-" -> "Reset time unknown"
+            "now" -> "Resetting now"
+            else -> "Resets in ${m.resets}"
+        },
     )
 }
 
-/** White "GO" badge on a dark tile, like the dashboard logo. */
+/** Small sizes: badge + three tight meter rows, also in IBM Plex Mono. */
 @Composable
-private fun GoLogo(textSize: androidx.compose.ui.unit.TextUnit) {
+private fun CompactLayout(s: WidgetState) {
+    val context = LocalContext.current
+    val rv = RemoteViews(context.packageName, R.layout.widget_compact)
+    bindCompactMeter(rv, R.id.c1_pct, R.id.c1_bar, s.fiveHour)
+    bindCompactMeter(rv, R.id.c2_pct, R.id.c2_bar, s.weekly)
+    bindCompactMeter(rv, R.id.c3_pct, R.id.c3_bar, s.monthly)
+    AndroidRemoteViews(rv, modifier = GlanceModifier.fillMaxSize())
+}
+
+private fun bindCompactMeter(rv: RemoteViews, pctId: Int, barId: Int, m: Meter) {
+    rv.setTextViewText(pctId, m.pctText)
+    rv.setProgressBar(barId, 1000, (m.pct * 10).roundToInt().coerceIn(0, 1000), false)
+}
+
+/** White badge tile with the official OpenCode "O" mark. */
+@Composable
+private fun LogoBadge(markWidth: androidx.compose.ui.unit.Dp, markHeight: androidx.compose.ui.unit.Dp) {
     Box(
         modifier = GlanceModifier
             .background(ColorProvider(R.color.go_logo_bg))
             .cornerRadius(3.dp)
-            .padding(horizontal = 5.dp, vertical = 1.dp),
+            .padding(horizontal = 5.dp, vertical = 3.dp),
         contentAlignment = Alignment.Center,
     ) {
-        Text(
-            "GO",
-            style = TextStyle(
-                color = ColorProvider(R.color.go_logo_fg),
-                fontWeight = FontWeight.Bold,
-                fontSize = textSize,
-            ),
+        Image(
+            provider = ImageProvider(R.drawable.ic_opencode_mark),
+            contentDescription = "OpenCode",
+            modifier = GlanceModifier.width(markWidth).height(markHeight),
         )
     }
 }
 
 @Composable
-private fun KeyPrompt(compact: Boolean, message: String) {
+private fun KeyPrompt(message: String) {
     Column(
         modifier = GlanceModifier.fillMaxSize(),
         verticalAlignment = Alignment.CenterVertically,
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        GoLogo(if (compact) 12.sp else 16.sp)
+        LogoBadge(24.dp, 30.dp)
         Spacer(GlanceModifier.height(6.dp))
         Text(
             message,

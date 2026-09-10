@@ -1,0 +1,195 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Full dashboard layout: header + three usage meters. Values are set
+     imperatively from UsageGlanceUi (setTextViewText / setProgressBar). -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:padding="2dp">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="center_vertical"
+        android:orientation="horizontal">
+
+        <ImageView
+            android:layout_width="22dp"
+            android:layout_height="26dp"
+            android:background="@drawable/widget_badge_bg"
+            android:contentDescription="OpenCode"
+            android:padding="3dp"
+            android:src="@drawable/ic_opencode_mark" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="6dp"
+            android:fontFamily="@font/ibm_plex_mono_semibold"
+            android:text="OpenCode Go"
+            android:textColor="@color/widget_primary"
+            android:textSize="15sp" />
+    </LinearLayout>
+
+    <!-- 5-hour -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="6dp"
+        android:orientation="vertical">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal">
+
+            <TextView
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:fontFamily="@font/ibm_plex_mono_semibold"
+                android:text="5-hour Usage"
+                android:textColor="@color/widget_primary"
+                android:textSize="13sp" />
+
+            <TextView
+                android:id="@+id/m1_pct"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:fontFamily="@font/ibm_plex_mono_medium"
+                android:text="–"
+                android:textColor="@color/widget_secondary"
+                android:textSize="13sp" />
+        </LinearLayout>
+
+        <ProgressBar
+            android:id="@+id/m1_bar"
+            style="?android:attr/progressBarStyleHorizontal"
+            android:layout_width="match_parent"
+            android:layout_height="6dp"
+            android:layout_marginTop="3dp"
+            android:indeterminateOnly="false"
+            android:max="1000"
+            android:maxHeight="6dp"
+            android:minHeight="6dp"
+            android:progressDrawable="@drawable/meter_bar" />
+
+        <TextView
+            android:id="@+id/m1_resets"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="2dp"
+            android:fontFamily="@font/ibm_plex_mono"
+            android:text=""
+            android:textColor="@color/widget_secondary"
+            android:textSize="11sp" />
+    </LinearLayout>
+
+    <!-- Weekly -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="5dp"
+        android:orientation="vertical">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal">
+
+            <TextView
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:fontFamily="@font/ibm_plex_mono_semibold"
+                android:text="Weekly Usage"
+                android:textColor="@color/widget_primary"
+                android:textSize="13sp" />
+
+            <TextView
+                android:id="@+id/m2_pct"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:fontFamily="@font/ibm_plex_mono_medium"
+                android:text="–"
+                android:textColor="@color/widget_secondary"
+                android:textSize="13sp" />
+        </LinearLayout>
+
+        <ProgressBar
+            android:id="@+id/m2_bar"
+            style="?android:attr/progressBarStyleHorizontal"
+            android:layout_width="match_parent"
+            android:layout_height="6dp"
+            android:layout_marginTop="3dp"
+            android:indeterminateOnly="false"
+            android:max="1000"
+            android:maxHeight="6dp"
+            android:minHeight="6dp"
+            android:progressDrawable="@drawable/meter_bar" />
+
+        <TextView
+            android:id="@+id/m2_resets"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="2dp"
+            android:fontFamily="@font/ibm_plex_mono"
+            android:text=""
+            android:textColor="@color/widget_secondary"
+            android:textSize="11sp" />
+    </LinearLayout>
+
+    <!-- Monthly -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="5dp"
+        android:orientation="vertical">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal">
+
+            <TextView
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:fontFamily="@font/ibm_plex_mono_semibold"
+                android:text="Monthly Usage"
+                android:textColor="@color/widget_primary"
+                android:textSize="13sp" />
+
+            <TextView
+                android:id="@+id/m3_pct"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:fontFamily="@font/ibm_plex_mono_medium"
+                android:text="–"
+                android:textColor="@color/widget_secondary"
+                android:textSize="13sp" />
+        </LinearLayout>
+
+        <ProgressBar
+            android:id="@+id/m3_bar"
+            style="?android:attr/progressBarStyleHorizontal"
+            android:layout_width="match_parent"
+            android:layout_height="6dp"
+            android:layout_marginTop="3dp"
+            android:indeterminateOnly="false"
+            android:max="1000"
+            android:maxHeight="6dp"
+            android:minHeight="6dp"
+            android:progressDrawable="@drawable/meter_bar" />
+
+        <TextView
+            android:id="@+id/m3_resets"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="2dp"
+            android:fontFamily="@font/ibm_plex_mono"
+            android:text=""
+            android:textColor="@color/widget_secondary"
+            android:textSize="11sp" />
+    </LinearLayout>
+</LinearLayout>

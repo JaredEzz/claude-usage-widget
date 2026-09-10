@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- OpenCode "O" mark from the official brand wordmark (opencode.ai/brand),
+     dark variant for use on the white badge tile. Bounds in the source are
+     x 0..24, y 6..36, shifted here into a 24x30 viewport. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="30dp"
+    android:viewportWidth="24"
+    android:viewportHeight="30">
+
+    <group android:translateY="-6">
+        <!-- outer frame -->
+        <path
+            android:fillColor="#656363"
+            android:pathData="M18,12 H6 V30 H18 V12 Z M24,36 H0 V6 H24 V36 Z" />
+        <!-- inner counter -->
+        <path
+            android:fillColor="#CFCECD"
+            android:pathData="M18,30 H6 V18 H18 V30 Z" />
+    </group>
+</vector>

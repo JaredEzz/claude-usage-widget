@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Night (dark widget background, like the dashboard screenshot) -->
+    <color name="widget_primary">#FFF5F5F5</color>
+    <color name="widget_secondary">#FFB9B9B9</color>
+    <color name="meter_track">#FF3D3D3D</color>
+</resources>

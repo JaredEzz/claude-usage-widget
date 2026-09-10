@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Day (light widget background) -->
+    <color name="widget_primary">#FF111111</color>
+    <color name="widget_secondary">#FF5A5A5A</color>
+    <color name="meter_track">#FFE2E2E2</color>
+</resources>
