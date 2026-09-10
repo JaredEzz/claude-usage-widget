@@ -11,9 +11,8 @@ import androidx.glance.appwidget.SizeMode
 import androidx.glance.appwidget.provideContent
 import androidx.glance.appwidget.updateAll
 import com.usage.claudewidget.data.AuthState
-import com.usage.claudewidget.data.UsageRepository
 import com.usage.claudewidget.data.UsageStore
-import kotlin.math.roundToInt
+import com.usage.claudewidget.work.RefreshScheduler
 
 class UsageWidget : GlanceAppWidget() {
 
@@ -26,13 +25,19 @@ class UsageWidget : GlanceAppWidget() {
     )
 
     override suspend fun provideGlance(context: Context, id: GlanceId) {
-        // Refresh-on-render: guarantees fresh data the moment the widget is placed or re-bound
-        // (a background worker race at placement time otherwise shows the empty placeholder for
-        // minutes). The periodic 15-min worker remains the steady-state refresher.
-        if (UsageStore.get(context).hasKey()) {
-            UsageRepository(context).refresh()
+        // Render FAST from the saved snapshot only. Never do network I/O here:
+        // a blocking fetch on the render path exceeds the launcher's bind
+        // limit and the widget shows the system "Can't load widget" placeholder.
+        // Fresh data arrives via the periodic worker, tap-to-refresh, and the
+        // one-shot refresh kicked below (all re-render when done).
+        val state = try {
+            if (UsageStore.get(context).hasKey()) {
+                RefreshScheduler.refreshNow(context)
+            }
+            readState(context)
+        } catch (_: Exception) {
+            WidgetState.EMPTY
         }
-        val state = readState(context)
         provideContent {
             GlanceTheme {
                 UsageWidgetContent(state)
@@ -49,18 +54,9 @@ class UsageWidget : GlanceAppWidget() {
             keyRejected = store.hasKey() && store.authState() == AuthState.NEEDS_LOGIN,
             hasData = store.hasSnapshot(),
             stale = TimeFmt.isStale(store.fetchedAt(), now),
-            fiveHour = Meter(
-                pct = store.rollingUtil().coerceAtLeast(0f).roundToInt(),
-                resets = TimeFmt.resetsIn(store.rollingReset(), now),
-            ),
-            weekly = Meter(
-                pct = store.weeklyUtil().coerceAtLeast(0f).roundToInt(),
-                resets = TimeFmt.resetsIn(store.weeklyReset(), now),
-            ),
-            monthly = Meter(
-                pct = store.monthlyUtil().coerceAtLeast(0f).roundToInt(),
-                resets = TimeFmt.resetsIn(store.monthlyReset(), now),
-            ),
+            fiveHour = WidgetState.meter(store.rollingUtil().coerceAtLeast(0f), store.rollingReset(), now),
+            weekly = WidgetState.meter(store.weeklyUtil().coerceAtLeast(0f), store.weeklyReset(), now),
+            monthly = WidgetState.meter(store.monthlyUtil().coerceAtLeast(0f), store.monthlyReset(), now),
         )
     }
 

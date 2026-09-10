@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Button
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -161,16 +162,52 @@ private fun StatusCard(store: UsageStore, status: String?, refreshTick: Long) {
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         if (store.hasSnapshot()) {
-            Text(
-                "5H ${store.rollingUtil().toInt()}% · 1W ${store.weeklyUtil().toInt()}% · " +
-                    "30D ${store.monthlyUtil().toInt()}% · " +
-                    "resets in ${TimeFmt.resetsIn(store.rollingReset())}",
-                style = MaterialTheme.typography.bodyMedium,
+            UsageMeter(
+                label = "5-hour Usage",
+                pct = store.rollingUtil().coerceAtLeast(0f),
+                resets = TimeFmt.resetsInLong(store.rollingReset()),
+            )
+            UsageMeter(
+                label = "Weekly Usage",
+                pct = store.weeklyUtil().coerceAtLeast(0f),
+                resets = TimeFmt.resetsInLong(store.weeklyReset()),
+            )
+            UsageMeter(
+                label = "Monthly Usage",
+                pct = store.monthlyUtil().coerceAtLeast(0f),
+                resets = TimeFmt.resetsInLong(store.monthlyReset()),
             )
         }
         store.lastError()?.let {
             Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
         }
+    }
+}
+
+@Composable
+private fun UsageMeter(label: String, pct: Float, resets: String) {
+    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            Text(label, style = MaterialTheme.typography.titleSmall)
+            Text(
+                TimeFmt.pctText(pct),
+                style = MaterialTheme.typography.titleSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        LinearProgressIndicator(
+            progress = { pct.coerceIn(0f, 100f) / 100f },
+            modifier = Modifier.fillMaxWidth(),
+        )
+        Text(
+            when (resets) {
+                "-" -> "Reset time unknown"
+                "now" -> "Resetting now"
+                else -> "Resets in $resets"
+            },
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
     }
 }
 

@@ -35,7 +35,8 @@ import com.usage.claudewidget.ui.MainActivity
 
 /** One usage meter row as shown on the opencode.ai Go dashboard. */
 data class Meter(
-    val pct: Int,
+    val pct: Float,
+    val pctText: String,
     val resets: String,
 )
 
@@ -48,7 +49,29 @@ data class WidgetState(
     val fiveHour: Meter,
     val weekly: Meter,
     val monthly: Meter,
-)
+) {
+    companion object {
+        /** Never-throw fallback so provideGlance always has something to render. */
+        val EMPTY = WidgetState(
+            hasKey = false,
+            keyRejected = false,
+            hasData = false,
+            stale = false,
+            fiveHour = Meter(0f, "-", "-"),
+            weekly = Meter(0f, "-", "-"),
+            monthly = Meter(0f, "-", "-"),
+        )
+
+        fun meter(util: Float, resetEpochMs: Long, now: Long): Meter {
+            val pct = util.coerceIn(0f, 100f)
+            return Meter(
+                pct = pct,
+                pctText = TimeFmt.pctText(pct),
+                resets = TimeFmt.resetsInLong(resetEpochMs, now),
+            )
+        }
+    }
+}
 
 private val COMPACT_MAX_WIDTH = 130.dp
 
@@ -129,7 +152,7 @@ private fun DashboardMeter(label: String, m: Meter) {
             )
             Spacer(GlanceModifier.defaultWeight())
             Text(
-                "${m.pct}%",
+                m.pctText,
                 style = TextStyle(
                     color = GlanceTheme.colors.onSurfaceVariant,
                     fontWeight = FontWeight.Medium,
@@ -141,7 +164,11 @@ private fun DashboardMeter(label: String, m: Meter) {
         Bar(m.pct)
         Spacer(GlanceModifier.height(2.dp))
         Text(
-            if (m.resets == "now") "Resetting now" else "Resets in ${m.resets}",
+            when (m.resets) {
+                "-" -> "Reset time unknown"
+                "now" -> "Resetting now"
+                else -> "Resets in ${m.resets}"
+            },
             style = TextStyle(
                 color = GlanceTheme.colors.onSurfaceVariant,
                 fontSize = 10.sp,
@@ -156,16 +183,16 @@ private fun CompactLayout(s: WidgetState) {
     Column(modifier = GlanceModifier.fillMaxSize()) {
         GoLogo(10.sp)
         Spacer(GlanceModifier.height(4.dp))
-        CompactMeter("5H", s.fiveHour.pct)
+        CompactMeter("5H", s.fiveHour)
         Spacer(GlanceModifier.height(3.dp))
-        CompactMeter("1W", s.weekly.pct)
+        CompactMeter("1W", s.weekly)
         Spacer(GlanceModifier.height(3.dp))
-        CompactMeter("30D", s.monthly.pct)
+        CompactMeter("30D", s.monthly)
     }
 }
 
 @Composable
-private fun CompactMeter(label: String, pct: Int) {
+private fun CompactMeter(label: String, m: Meter) {
     Column(modifier = GlanceModifier.fillMaxWidth()) {
         Row(modifier = GlanceModifier.fillMaxWidth()) {
             Text(
@@ -178,7 +205,7 @@ private fun CompactMeter(label: String, pct: Int) {
             )
             Spacer(GlanceModifier.defaultWeight())
             Text(
-                "$pct%",
+                m.pctText,
                 style = TextStyle(
                     color = GlanceTheme.colors.onSurface,
                     fontWeight = FontWeight.Bold,
@@ -187,14 +214,14 @@ private fun CompactMeter(label: String, pct: Int) {
             )
         }
         Spacer(GlanceModifier.height(2.dp))
-        Bar(pct)
+        Bar(m.pct)
     }
 }
 
 @Composable
-private fun Bar(pct: Int) {
+private fun Bar(pct: Float) {
     LinearProgressIndicator(
-        progress = (pct.coerceIn(0, 100)) / 100f,
+        progress = (pct.coerceIn(0f, 100f)) / 100f,
         modifier = GlanceModifier.fillMaxWidth().height(5.dp).cornerRadius(2.dp),
         color = goBlue,
         backgroundColor = barTrack(),

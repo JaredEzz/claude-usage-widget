@@ -23,7 +23,11 @@ class RefreshAction : ActionCallback {
             )
             return
         }
-        UsageRepository(context).refresh()
+        try {
+            UsageRepository(context).refresh()
+        } catch (_: Exception) {
+            // Repository already records the failure; keep the last snapshot.
+        }
         UsageWidget.updateAll(context)
     }
 }
